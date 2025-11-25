@@ -1,0 +1,80 @@
+import keyring
+from .database import db_session
+from .models import Setting
+
+# The service name for keyring should be unique to the application.
+KEYRING_SERVICE_NAME = "SalonBillingApp"
+
+
+# --- Non-sensitive settings (stored in SQLite) ---
+
+def get_setting(key: str, default: str | None = None) -> str | None:
+    """
+    Retrieves a non-sensitive setting from the database.
+
+    Args:
+        key: The key of the setting to retrieve.
+        default: The default value to return if the key is not found.
+
+    Returns:
+        The value of the setting, or the default value if not found.
+    """
+    with db_session() as db:
+        setting = db.query(Setting).filter(Setting.key == key).first()
+        return setting.value if setting else default
+
+
+def set_setting(key: str, value: str | None) -> None:
+    """
+    Saves a non-sensitive setting to the database.
+
+    Args:
+        key: The key of the setting to save.
+        value: The value of the setting.
+    """
+    with db_session() as db:
+        setting = db.query(Setting).filter(Setting.key == key).first()
+        if setting:
+            setting.value = value
+        else:
+            setting = Setting(key=key, value=value)
+            db.add(setting)
+        db.commit()
+
+
+# --- Sensitive settings (stored in Windows Credential Manager via keyring) ---
+
+def get_secret(key: str) -> str | None:
+    """
+    Retrieves a secret from the secure credential store.
+
+    Args:
+        key: The key of the secret to retrieve (e.g., "whatsapp_api_token").
+
+    Returns:
+        The secret value, or None if not found.
+    """
+    try:
+        return keyring.get_password(KEYRING_SERVICE_NAME, key)
+    except Exception as e:
+        # Handle potential keyring errors gracefully
+        print(f"Error retrieving secret '{key}': {e}")
+        return None
+
+
+def set_secret(key: str, value: str | None) -> None:
+    """
+    Saves a secret to the secure credential store.
+
+    Args:
+        key: The key of the secret to save.
+        value: The value of the secret. If None, the secret is deleted.
+    """
+    try:
+        if value is None:
+            keyring.delete_password(KEYRING_SERVICE_NAME, key)
+        else:
+            keyring.set_password(KEYRING_SERVICE_NAME, key, value)
+    except Exception as e:
+        # Handle potential keyring errors gracefully
+        print(f"Error setting secret '{key}': {e}")
