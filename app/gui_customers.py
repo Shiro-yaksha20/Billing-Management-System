@@ -1,0 +1,157 @@
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QTableWidget,
+    QTableWidgetItem, QMessageBox, QTextEdit, QHBoxLayout, QFormLayout
+)
+from PyQt6.QtCore import Qt
+from .models import Customer
+from .database import db_session
+
+class CustomerWindow(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Manage Customers")
+        self.setMinimumWidth(800)
+
+        self.layout = QVBoxLayout(self)
+
+        # Search bar
+        search_layout = QHBoxLayout()
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search by name or phone...")
+        self.search_button = QPushButton("Search")
+        search_layout.addWidget(self.search_input)
+        search_layout.addWidget(self.search_button)
+        self.layout.addLayout(search_layout)
+
+        # Customer table
+        self.customer_table = QTableWidget()
+        self.customer_table.setColumnCount(4)
+        self.customer_table.setHorizontalHeaderLabels(["Name", "Phone", "Last Visit", "ID"])
+        self.customer_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.customer_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.customer_table.setColumnHidden(3, True) # Hide ID column
+        self.layout.addWidget(self.customer_table)
+
+        # Customer notes
+        self.notes_area = QTextEdit()
+        self.notes_area.setReadOnly(True)
+        self.layout.addWidget(self.notes_area)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        self.add_button = QPushButton("Add Customer")
+        self.edit_button = QPushButton("Edit Customer")
+        button_layout.addWidget(self.add_button)
+        button_layout.addWidget(self.edit_button)
+        self.layout.addLayout(button_layout)
+
+        # Connect signals
+        self.search_button.clicked.connect(self.search_customers)
+        self.search_input.returnPressed.connect(self.search_customers)
+        self.customer_table.itemSelectionChanged.connect(self.display_customer_notes)
+        self.add_button.clicked.connect(self.add_customer)
+        self.edit_button.clicked.connect(self.edit_customer)
+
+        self.load_customers()
+
+    def load_customers(self, search_term=None):
+        with db_session() as db:
+            query = db.query(Customer)
+            if search_term:
+                query = query.filter(
+                    Customer.name.ilike(f"%{search_term}%") |
+                    Customer.phone.ilike(f"%{search_term}%")
+                )
+            customers = query.all()
+
+            self.customer_table.setRowCount(len(customers))
+            for i, customer in enumerate(customers):
+                self.customer_table.setItem(i, 0, QTableWidgetItem(customer.name))
+                self.customer_table.setItem(i, 1, QTableWidgetItem(customer.phone))
+                last_visit = customer.last_visit_at.strftime("%Y-%m-%d") if customer.last_visit_at else "N/A"
+                self.customer_table.setItem(i, 2, QTableWidgetItem(last_visit))
+                self.customer_table.setItem(i, 3, QTableWidgetItem(str(customer.id)))
+
+    def search_customers(self):
+        self.load_customers(self.search_input.text())
+
+    def display_customer_notes(self):
+        selected_rows = self.customer_table.selectedItems()
+        if not selected_rows:
+            self.notes_area.clear()
+            return
+
+        customer_id = int(selected_rows[3].text())
+        with db_session() as db:
+            customer = db.query(Customer).filter(Customer.id == customer_id).first()
+            self.notes_area.setPlainText(customer.notes if customer else "")
+
+    def add_customer(self):
+        dialog = CustomerDialog(self)
+        if dialog.exec():
+            self.load_customers()
+
+    def edit_customer(self):
+        selected_rows = self.customer_table.selectedItems()
+        if not selected_rows:
+            QMessageBox.warning(self, "No Customer Selected", "Please select a customer to edit.")
+            return
+
+        customer_id = int(selected_rows[3].text())
+        dialog = CustomerDialog(self, customer_id=customer_id)
+        if dialog.exec():
+            self.load_customers()
+            self.display_customer_notes()
+
+class CustomerDialog(QDialog):
+    def __init__(self, parent=None, customer_id=None):
+        super().__init__(parent)
+        self.customer_id = customer_id
+
+        self.layout = QFormLayout(self)
+        self.name_input = QLineEdit()
+        self.phone_input = QLineEdit()
+        self.notes_input = QTextEdit()
+
+        if self.customer_id:
+            self.setWindowTitle("Edit Customer")
+            with db_session() as db:
+                customer = db.query(Customer).filter(Customer.id == self.customer_id).first()
+                if customer:
+                    self.name_input.setText(customer.name)
+                    self.phone_input.setText(customer.phone)
+                    self.notes_input.setPlainText(customer.notes)
+        else:
+            self.setWindowTitle("Add Customer")
+
+        self.layout.addRow("Name:", self.name_input)
+        self.layout.addRow("Phone:", self.phone_input)
+        self.layout.addRow("Notes:", self.notes_input)
+
+        button_box = QHBoxLayout()
+        save_button = QPushButton("Save")
+        cancel_button = QPushButton("Cancel")
+        button_box.addWidget(save_button)
+        button_box.addWidget(cancel_button)
+        self.layout.addRow(button_box)
+
+        save_button.clicked.connect(self.save_customer)
+        cancel_button.clicked.connect(self.reject)
+
+    def save_customer(self):
+        if not self.name_input.text() or not self.phone_input.text():
+            QMessageBox.warning(self, "Input Error", "Name and phone number are required.")
+            return
+
+        with db_session() as db:
+            if self.customer_id:
+                customer = db.query(Customer).filter(Customer.id == self.customer_id).first()
+            else:
+                customer = Customer()
+                db.add(customer)
+
+            customer.name = self.name_input.text()
+            customer.phone = self.phone_input.text()
+            customer.notes = self.notes_input.toPlainText()
+
+        self.accept()
