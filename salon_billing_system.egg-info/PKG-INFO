@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: salon-billing-system
+Version: 1.0.0
+Summary: A desktop billing system for salons.
+Author: Jules
+Requires-Dist: PyQt6
+Requires-Dist: SQLAlchemy
+Requires-Dist: reportlab
+Requires-Dist: requests
+Requires-Dist: keyring
+Dynamic: author
+Dynamic: requires-dist
+Dynamic: summary
