@@ -2,6 +2,35 @@
 
 A complete, production-ready Windows desktop billing system for a salon, built with Python and PyQt6.
 
+## CI/CD Workflows
+
+This repository uses GitHub Actions for Continuous Integration and Continuous Deployment.
+
+### 1. CI Test & Lint (`ci-test.yml`)
+*   **Triggers:** Pushes to `master` and Pull Requests to `master`.
+*   **What it does:**
+    *   Sets up Python 3.11 on Windows.
+    *   Installs dependencies from `requirements.txt`.
+    *   Checks for syntax errors (`py_compile`).
+    *   Lints code with **Black**.
+    *   Runs unit tests with **pytest**.
+*   **Manual Trigger:** No.
+
+### 2. Build & Release (`build-release.yml`)
+*   **Triggers:** Pushes to tags matching `v*` (e.g., `v1.0.0`) or manually via "Run workflow".
+*   **What it does:**
+    *   Builds the standalone Windows executable using **PyInstaller**.
+    *   Creates a GitHub Release.
+    *   Uploads `SalonBillingSystem.exe` as an asset to the release.
+*   **Manual Trigger:** Go to Actions > Build & Release > Run workflow.
+
+### 3. Docker Build (`docker-build.yml`)
+*   **Triggers:** Pushes to `master` or manually via "Run workflow".
+*   **What it does:**
+    *   Builds a Docker image of the environment.
+    *   Pushes the image to GitHub Container Registry (ghcr.io).
+*   **Manual Trigger:** Go to Actions > Docker Build & Push > Run workflow.
+
 ## Releases
 
 Official builds for Windows are available under the [Releases](https://github.com/your-username/your-repo/releases) section of this repository. The `.exe` is built automatically by GitHub Actions whenever a new version is tagged.

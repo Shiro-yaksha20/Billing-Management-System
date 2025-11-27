@@ -4,3 +4,8 @@ reportlab
 requests
 keyring
 PyInstaller
+pytest
+black
+ruff
+pytest-mock
+pytest-qt
