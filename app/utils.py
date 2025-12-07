@@ -1,9 +1,12 @@
 import logging
 import os
+import sys
+from typing import Optional
+from .constants import LOGS_DIR
 
-LOGS_DIR = "logs"
+"""Utility helpers: logger setup and fallbacks."""
 
-def setup_logger():
+def setup_logger() -> logging.Logger:
     """Sets up a basic file logger."""
     if not os.path.exists(LOGS_DIR):
         os.makedirs(LOGS_DIR)
@@ -20,3 +23,17 @@ def setup_logger():
     return logging.getLogger(__name__)
 
 logger = setup_logger()
+
+
+def log_info(message: str) -> None:
+    try:
+        logger.info(message)
+    except Exception as e:
+        print(f"[LOGGER FAILED] INFO: {message} (Error: {e})", file=sys.stderr)
+
+
+def log_error(message: str) -> None:
+    try:
+        logger.error(message)
+    except Exception as e:
+        print(f"[LOGGER FAILED] ERROR: {message} (Error: {e})", file=sys.stderr)

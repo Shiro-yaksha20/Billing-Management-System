@@ -1,0 +1,464 @@
+﻿from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QTableWidget,
+    QTableWidgetItem, QMessageBox, QTextEdit, QHBoxLayout, QFormLayout, QComboBox,
+    QGroupBox
+)
+from PyQt6.QtCore import Qt
+from datetime import datetime
+from .models import Customer, Staff, Service, Bill, BillItem
+from .database import db_session
+from .gui_customers import CustomerDialog
+from .pdf_generator import generate_receipt_pdf
+from .whatsapp_client import send_whatsapp_message
+from . import settings_service
+
+class BillingWindow(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("New Bill")
+        self.setMinimumWidth(900)
+
+        self.selected_customer = None
+        self.all_services = []  # Store all services for filtering (as plain dicts)
+        self._last_load_time = datetime.min
+
+        self.layout = QVBoxLayout(self)
+
+        # Main layout
+        main_layout = QHBoxLayout()
+        left_panel = QVBoxLayout()
+        right_panel = QVBoxLayout()
+        main_layout.addLayout(left_panel, 2)
+        main_layout.addLayout(right_panel, 1)
+        self.layout.addLayout(main_layout)
+
+        # Customer section
+        customer_group = QGroupBox("Customer")
+        customer_layout = QFormLayout()
+        self.customer_search_input = QLineEdit()
+        self.customer_search_input.setPlaceholderText("Search phone or name...")
+        self.new_customer_button = QPushButton("New Customer")
+        self.customer_search_input.returnPressed.connect(self.search_customer)
+        customer_search_layout = QHBoxLayout()
+        customer_search_layout.addWidget(self.customer_search_input)
+        customer_search_layout.addWidget(self.new_customer_button)
+        customer_layout.addRow(customer_search_layout)
+
+        self.customer_name_label = QLabel("Name: ")
+        self.customer_phone_label = QLabel("Phone: ")
+        customer_layout.addRow(self.customer_name_label)
+        customer_layout.addRow(self.customer_phone_label)
+        customer_group.setLayout(customer_layout)
+        left_panel.addWidget(customer_group)
+        self.new_customer_button.clicked.connect(self.create_new_customer)
+
+        # Staff section
+        staff_group = QGroupBox("Staff")
+        staff_layout = QFormLayout()
+        self.staff_combo = QComboBox()
+        staff_layout.addRow("Select Staff:", self.staff_combo)
+        staff_group.setLayout(staff_layout)
+        left_panel.addWidget(staff_group)
+
+        # Services section
+        services_group = QGroupBox("Services")
+        services_layout = QVBoxLayout()
+        self.services_table = QTableWidget()
+        self.services_table.setColumnCount(5)
+        self.services_table.setHorizontalHeaderLabels(["Service", "Qty", "Price", "Total", "ID"])
+        self.services_table.setColumnHidden(4, True)
+        services_layout.addWidget(self.services_table)
+
+        service_controls_layout = QHBoxLayout()
+        
+        # Category filter
+        self.category_combo = QComboBox()
+        self.category_combo.addItem("All Categories", None)
+        self.category_combo.currentIndexChanged.connect(self.filter_services_by_category)
+        
+        # Service search
+        self.service_search_input = QLineEdit()
+        self.service_search_input.setPlaceholderText("Search services...")
+        self.service_search_input.textChanged.connect(self.filter_services_by_search)
+        
+        self.service_combo = QComboBox()
+        self.add_service_button = QPushButton("Add Service")
+        self.remove_service_button = QPushButton("Remove Service")
+        
+        service_controls_layout.addWidget(QLabel("Category:"))
+        service_controls_layout.addWidget(self.category_combo)
+        service_controls_layout.addWidget(QLabel("Search:"))
+        service_controls_layout.addWidget(self.service_search_input)
+        service_controls_layout.addWidget(self.service_combo)
+        service_controls_layout.addWidget(self.add_service_button)
+        service_controls_layout.addWidget(self.remove_service_button)
+        services_layout.addLayout(service_controls_layout)
+        services_group.setLayout(services_layout)
+        left_panel.addWidget(services_group)
+
+        # Notes
+        notes_group = QGroupBox("Customer Notes")
+        notes_layout = QVBoxLayout()
+        self.customer_notes_area = QTextEdit()
+        notes_layout.addWidget(self.customer_notes_area)
+        notes_group.setLayout(notes_layout)
+        right_panel.addWidget(notes_group)
+
+        # Totals
+        totals_group = QGroupBox("Totals")
+        totals_layout = QFormLayout()
+        self.subtotal_label = QLabel("₹ 0.00")
+        self.discount_type_combo = QComboBox()
+        self.discount_type_combo.addItems(["Flat (₹)", "Percent (%)"])
+        self.discount_input = QLineEdit("0")
+        self.tax_input = QLineEdit("0")
+        self.total_label = QLabel("₹ 0.00")
+        totals_layout.addRow("Subtotal:", self.subtotal_label)
+
+        discount_layout = QHBoxLayout()
+        discount_layout.addWidget(self.discount_type_combo)
+        discount_layout.addWidget(self.discount_input)
+        totals_layout.addRow("Discount:", discount_layout)
+
+        totals_layout.addRow("Tax (%):", self.tax_input)
+        totals_layout.addRow("Total:", self.total_label)
+        totals_group.setLayout(totals_layout)
+        right_panel.addWidget(totals_group)
+
+        # Payment
+        payment_group = QGroupBox("Payment")
+        payment_layout = QFormLayout()
+        self.payment_method_combo = QComboBox()
+        self.payment_method_combo.addItems(["Cash", "UPI", "Card", "Other"])
+        payment_layout.addRow("Payment Method:", self.payment_method_combo)
+        payment_group.setLayout(payment_layout)
+        right_panel.addWidget(payment_group)
+
+        # Actions
+        action_button_layout = QHBoxLayout()
+        self.save_bill_button = QPushButton("Save Bill")
+        self.save_and_send_button = QPushButton("Save, PDF & Send")
+        action_button_layout.addWidget(self.save_bill_button)
+        action_button_layout.addWidget(self.save_and_send_button)
+        self.layout.addLayout(action_button_layout)
+
+        # Load initial data
+        self.load_staff()
+        self.load_services()
+
+        # Connect signals
+        self.add_service_button.clicked.connect(self.add_service_to_bill)
+        self.remove_service_button.clicked.connect(self.remove_service_from_bill)
+        self.discount_input.textChanged.connect(self.update_totals)
+        self.tax_input.textChanged.connect(self.update_totals)
+        self.services_table.cellChanged.connect(self.update_totals_from_table)
+        self.save_bill_button.clicked.connect(self.save_bill)
+        self.save_and_send_button.clicked.connect(self.save_bill_and_send)
+
+    def load_staff(self):
+        with db_session() as db:
+            staff_list = db.query(Staff).filter(Staff.active == True).all()
+            for staff in staff_list:
+                self.staff_combo.addItem(staff.name, staff.id)
+
+    def load_services(self):
+        """Load all active services and populate categories."""
+        # Block signals during combo updates to avoid recursive triggers
+        self.category_combo.blockSignals(True)
+        self.service_combo.blockSignals(True)
+        try:
+            with db_session() as db:
+                services = db.query(Service).filter(Service.active == True).order_by(
+                    Service.category, Service.display_name
+                ).all()
+                # Convert ORM objects to plain dicts before session closes
+                self.all_services = [
+                    {
+                        'id': s.id,
+                        'category': s.category,
+                        'name': s.name,
+                        'display_name': s.display_name or s.name,
+                        'variant': s.variant,
+                        'price': float(s.price) if s.price is not None else None,
+                        'notes': s.notes or ''
+                    }
+                    for s in services
+                ]
+                self._last_load_time = datetime.now()
+                categories = sorted(set(s['category'] for s in self.all_services if s['category']))
+                self.category_combo.clear()
+                self.category_combo.addItem("All Categories", None)
+                for category in categories:
+                    self.category_combo.addItem(category, category)
+                self.populate_service_combo(self.all_services)
+        except Exception as e:
+            QMessageBox.critical(self, "Database Error", f"Failed to load services.\n{e}\nRun migration: python -m app.migrate_service_schema")
+            self.reject()
+            return
+        finally:
+            self.category_combo.blockSignals(False)
+            self.service_combo.blockSignals(False)
+
+    def populate_service_combo(self, services):
+        """Populate service combo box with given services (expects dicts)."""
+        self.service_combo.blockSignals(True)
+        try:
+            while self.service_combo.count() > 0:
+                self.service_combo.removeItem(0)
+            for service in services:
+                display_text = service.get('display_name') or service.get('name') or ''
+                price = service.get('price')
+                price_text = f"₹{price}" if price not in (None, '') else "₹0"
+                self.service_combo.addItem(f"{display_text} - {price_text}", service.get('id'))
+        finally:
+            self.service_combo.blockSignals(False)
+
+    def filter_services_by_category(self):
+        """Filter services by selected category using plain dicts."""
+        selected_category = self.category_combo.currentData()
+        search_text = (self.service_search_input.text() or '').lower()
+        
+        filtered = self.all_services
+        
+        if selected_category:
+            filtered = [s for s in filtered if s.get('category') == selected_category]
+        
+        if search_text:
+            filtered = [
+                s for s in filtered
+                if (
+                    search_text in (s.get('display_name') or s.get('name') or '').lower()
+                    or search_text in (s.get('name') or '').lower()
+                    or (s.get('notes') and search_text in s.get('notes').lower())
+                )
+            ]
+        
+        self.populate_service_combo(filtered)
+
+    def filter_services_by_search(self):
+        self.filter_services_by_category()
+
+    def search_customer(self):
+        search_term = self.customer_search_input.text()
+        if not search_term:
+            return
+
+        with db_session() as db:
+            customer = db.query(Customer).filter(
+                (Customer.phone == search_term) | (Customer.name.ilike(f"%{search_term}%"))
+            ).first()
+
+            if customer:
+                self.selected_customer = customer
+                self.customer_name_label.setText(f"Name: {customer.name}")
+                self.customer_phone_label.setText(f"Phone: {customer.phone}")
+                self.customer_notes_area.setPlainText(customer.notes or "")
+            else:
+                QMessageBox.information(self, "Customer Not Found", "No customer found with that name or phone number.")
+                self.selected_customer = None
+
+    def create_new_customer(self):
+        dialog = CustomerDialog(self)
+        if dialog.exec():
+            # The dialog saves the customer, now we can search for them
+            self.customer_search_input.setText(dialog.phone_input.text())
+            self.search_customer()
+
+    def _ensure_fresh_services(self):
+        if (datetime.now() - self._last_load_time).total_seconds() > 300:
+            self.load_services()
+
+    def add_service_to_bill(self):
+        self._ensure_fresh_services()
+        service_id = self.service_combo.currentData()
+        service = next((s for s in self.all_services if s.get('id') == service_id), None)
+        if not service:
+            QMessageBox.warning(self, "Error", "Service not found.")
+            return
+
+        row_position = self.services_table.rowCount()
+        self.services_table.insertRow(row_position)
+        self.services_table.setItem(row_position, 0, QTableWidgetItem(service.get('name') or ''))
+        self.services_table.setItem(row_position, 1, QTableWidgetItem("1"))
+        self.services_table.setItem(row_position, 2, QTableWidgetItem(str(service.get('price') or 0)))
+        self.services_table.setItem(row_position, 3, QTableWidgetItem(str(service.get('price') or 0)))
+        self.services_table.setItem(row_position, 4, QTableWidgetItem(str(service.get('id'))))
+        self.update_totals()
+
+    def remove_service_from_bill(self):
+        selected_row = self.services_table.currentRow()
+        if selected_row >= 0:
+            self.services_table.removeRow(selected_row)
+            self.update_totals()
+
+    def update_totals_from_table(self, row, column):
+        if column == 1 or column == 2:
+            try:
+                qty = int(self.services_table.item(row, 1).text())
+                price = float(self.services_table.item(row, 2).text())
+                line_total = qty * price
+                self.services_table.item(row, 3).setText(f"{line_total:.2f}")
+            except (ValueError, TypeError):
+                pass
+            self.update_totals()
+
+    def update_totals(self):
+        subtotal = 0.0
+        for row in range(self.services_table.rowCount()):
+            try:
+                subtotal += float(self.services_table.item(row, 3).text())
+            except (ValueError, TypeError):
+                pass
+
+        self.subtotal_label.setText(f"₹ {subtotal:.2f}")
+
+        try:
+            discount_value = float(self.discount_input.text())
+        except ValueError:
+            discount_value = 0.0
+
+        discount_amount = 0.0
+        if self.discount_type_combo.currentIndex() == 0:
+            discount_amount = min(discount_value, subtotal)
+            self.discount_input.setStyleSheet("" if discount_value <= subtotal else "background-color: #ffcccc;")
+        else:
+            capped_percent = min(discount_value, 100.0)
+            discount_amount = subtotal * (capped_percent / 100)
+            self.discount_input.setStyleSheet("" if discount_value <= 100 else "background-color: #ffcccc;")
+
+        try:
+            tax_percent = float(self.tax_input.text())
+        except ValueError:
+            tax_percent = 0.0
+
+        total = subtotal - discount_amount
+        tax_amount = total * (tax_percent / 100)
+        total += tax_amount
+
+        self.total_label.setText(f"₹ {total:.2f}")
+
+    def save_bill(self, and_send=False):
+        if not self.selected_customer:
+            QMessageBox.warning(self, "No Customer", "Please select a customer.")
+            return
+        if self.staff_combo.currentData() is None:
+            QMessageBox.warning(self, "No Staff", "Please select a staff member.")
+            return
+        if self.services_table.rowCount() == 0:
+            QMessageBox.warning(self, "No Services", "Please add at least one service.")
+            return
+        try:
+            total_value = float(self.total_label.text().replace("₹", "").replace(",", "").strip())
+            if total_value < 0:
+                QMessageBox.warning(self, "Invalid Total", "Total cannot be negative. Please check discount amount.")
+                return
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Total", "Could not calculate total.")
+            return
+
+        with db_session() as db:
+            new_bill = Bill(
+                customer_id=self.selected_customer.id,
+                staff_id=self.staff_combo.currentData(),
+                payment_method=self.payment_method_combo.currentText(),
+            )
+
+            for row in range(self.services_table.rowCount()):
+                item = BillItem(
+                    service_id=int(self.services_table.item(row, 4).text()),
+                    quantity=int(self.services_table.item(row, 1).text()),
+                    unit_price=float(self.services_table.item(row, 2).text()),
+                    line_total=float(self.services_table.item(row, 3).text())
+                )
+                new_bill.items.append(item)
+
+            subtotal = sum(item.line_total for item in new_bill.items)
+            new_bill.subtotal = subtotal
+
+            try:
+                discount_value = float(self.discount_input.text())
+            except ValueError:
+                discount_value = 0.0
+
+            if self.discount_type_combo.currentIndex() == 0:
+                new_bill.discount_type = "flat"
+                new_bill.discount_amount = min(discount_value, float(subtotal))
+            else:
+                new_bill.discount_type = "percent"
+                percent = min(discount_value, 100.0)
+                new_bill.discount_amount = float(subtotal) * (percent / 100)
+
+            try:
+                new_bill.tax_percent = float(self.tax_input.text())
+            except ValueError:
+                new_bill.tax_percent = 0.0
+
+            total = float(subtotal) - float(new_bill.discount_amount)
+            tax_amount = total * (float(new_bill.tax_percent) / 100)
+            new_bill.tax_amount = tax_amount
+            new_bill.total = total + tax_amount
+
+            db.add(new_bill)
+            customer = db.query(Customer).filter(Customer.id == self.selected_customer.id).first()
+            customer.last_visit_at = new_bill.bill_datetime
+            db.flush()
+
+            new_bill.bill_number = str(new_bill.id)
+            bill_id = new_bill.id
+
+        QMessageBox.information(self, "Bill Saved", f"Bill #{bill_id} has been saved.")
+
+        if and_send:
+            self.generate_and_send(bill_id)
+
+        self.accept()
+
+    def save_bill_and_send(self):
+        self.save_bill(and_send=True)
+
+    def generate_and_send(self, bill_id):
+        try:
+            pdf_path = generate_receipt_pdf(bill_id)
+            QMessageBox.information(self, "PDF Generated", f"Receipt saved to {pdf_path}")
+
+            with db_session() as db:
+                bill = db.query(Bill).filter(Bill.id == bill_id).first()
+                customer_phone = bill.customer.phone
+                message_template = settings_service.get_setting("whatsapp_message_template")
+                message = message_template.format(
+                    customer_name=bill.customer.name,
+                    salon_name=settings_service.get_setting("salon_name"),
+                    total=f"{bill.total:.2f}"
+                )
+                country_code = settings_service.get_setting("whatsapp_country_code", "91")
+                full_phone = f"{country_code}{customer_phone}"
+                try:
+                    success, response = send_whatsapp_message(full_phone, message, pdf_path)
+                    
+                    if success:
+                        bill.whatsapp_status = "Sent"
+                        QMessageBox.information(
+                            self,
+                            "WhatsApp Sent",
+                            f"Receipt sent successfully to {customer_phone}"
+                        )
+                    else:
+                        bill.whatsapp_status = "Failed"
+                        error_msg = str(response)[:500]
+                        bill.whatsapp_last_error = error_msg
+                        QMessageBox.critical(
+                            self,
+                            "WhatsApp Send Failed",
+                            f"Could not send receipt to {customer_phone}.\n\n"
+                            f"Error: {error_msg}\n\n"
+                            f"You can retry from Bill History."
+                        )
+                except Exception as e:
+                    bill.whatsapp_status = "Error"
+                    QMessageBox.critical(
+                        self,
+                        "WhatsApp Error",
+                        f"An error occurred while sending:\n{str(e)[:200]}"
+                    )
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"An error occurred: {e}")

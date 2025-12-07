@@ -3,6 +3,7 @@ import json
 from . import settings_service
 from .utils import logger
 
+
 def send_whatsapp_message(to_number: str, message: str, attachment_path: str = None):
     """
     Sends a message via the WhatsApp Cloud API.
@@ -33,52 +34,52 @@ def send_whatsapp_message(to_number: str, message: str, attachment_path: str = N
         if attachment_path:
             # Upload the media first
             upload_url = f"https://graph.facebook.com/{api_version}/{phone_id}/media"
-        files = {
-            'file': (attachment_path.split('/')[-1], open(attachment_path, 'rb'), 'application/pdf'),
-            'messaging_product': (None, 'whatsapp')
-        }
-        upload_headers = {"Authorization": f"Bearer {token}"}
-        upload_response = requests.post(upload_url, headers=upload_headers, files=files)
+            
+            with open(attachment_path, 'rb') as file:
+                files = {
+                    'file': (attachment_path.split('/')[-1], file, 'application/pdf'),
+                    'messaging_product': (None, 'whatsapp')
+                }
+                upload_headers = {"Authorization": f"Bearer {token}"}
+                upload_response = requests.post(upload_url, headers=upload_headers, files=files)
 
-        if upload_response.status_code != 200:
-            logger.error(f"Failed to upload media to WhatsApp: {upload_response.text}")
-            return False, {"error": "Failed to upload media.", "details": upload_response.json()}
+            if upload_response.status_code != 200:
+                logger.error(f"Failed to upload media to WhatsApp: {upload_response.text}")
+                return False, {"error": "Failed to upload media.", "details": upload_response.json()}
 
-        media_id = upload_response.json().get("id")
-        if not media_id:
-            logger.error("Media ID not found in WhatsApp upload response.")
-            return False, {"error": "Media ID not found in upload response."}
+            media_id = upload_response.json().get("id")
+            if not media_id:
+                logger.error("Media ID not found in WhatsApp upload response.")
+                return False, {"error": "Media ID not found in upload response."}
 
-        # Send the document with a caption
-        payload = {
-            "messaging_product": "whatsapp",
-            "to": to_number,
-            "type": "document",
-            "document": {
-                "id": media_id,
-                "filename": attachment_path.split("/")[-1],
-                "caption": message
+            # Send the document with a caption
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": to_number,
+                "type": "document",
+                "document": {
+                    "id": media_id,
+                    "filename": attachment_path.split("/")[-1],
+                    "caption": message
+                }
             }
-        }
-    else:
-        # Send a simple text message if no attachment
-        payload = {
-            "messaging_product": "whatsapp",
-            "to": to_number,
-            "type": "text",
-            "text": {"body": message}
-        }
+        else:
+            # Send a simple text message if no attachment
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": to_number,
+                "type": "text",
+                "text": {"body": message}
+            }
 
-    response = requests.post(url, headers=headers, data=json.dumps(payload))
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
 
-    response = requests.post(url, headers=headers, data=json.dumps(payload))
-
-    if response.status_code == 200:
-        logger.info(f"WhatsApp message sent to {to_number}")
-    else:
-        logger.error(f"Failed to send WhatsApp message to {to_number}: {response.text}")
-
-    return response.status_code == 200, response.json()
+        if response.status_code == 200:
+            logger.info(f"WhatsApp message sent to {to_number}")
+            return True, response.json()
+        else:
+            logger.error(f"Failed to send WhatsApp message to {to_number}: {response.text}")
+            return False, response.json()
 
     except requests.exceptions.RequestException as e:
         logger.error(f"An HTTP error occurred while sending WhatsApp message: {e}")
@@ -86,3 +87,6 @@ def send_whatsapp_message(to_number: str, message: str, attachment_path: str = N
     except IOError as e:
         logger.error(f"An IO error occurred while reading attachment: {e}")
         return False, {"error": "An IO error occurred.", "details": str(e)}
+    except Exception as e:
+        logger.error(f"Unexpected error in send_whatsapp_message: {e}")
+        return False, {"error": "Unexpected error.", "details": str(e)}

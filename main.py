@@ -8,6 +8,13 @@ def main():
     """Main function to run the application."""
     logger.info("Application starting...")
     try:
+        # Create a database backup before any operations
+        try:
+            from app.backup_service import create_backup
+            create_backup(reason="startup")
+        except Exception as be:
+            logger.warning(f"Startup backup not created: {be}")
+
         # Initialize the database and create tables
         init_db()
 

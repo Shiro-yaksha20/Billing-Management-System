@@ -1,0 +1,130 @@
+﻿"""
+Test script for CSV service import functionality.
+
+This script:
+1. Runs the database migration
+2. Imports services from the CSV file
+3. Verifies the import was successful
+"""
+
+import sys
+from pathlib import Path
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from app.migrate_service_schema import migrate_service_table
+from app.csv_service_importer import import_services_from_csv, export_services_to_csv
+from app.database import db_session
+from app.models import Service
+
+
+def test_import():
+    """Test the CSV import process."""
+    print("=" * 60)
+    print("Step 1: Running database migration...")
+    print("=" * 60)
+    
+    try:
+        migrate_service_table()
+        print("✓ Migration completed successfully!\n")
+    except Exception as e:
+        print(f"✗ Migration failed: {e}\n")
+        return False
+    
+    print("=" * 60)
+    print("Step 2: Importing services from CSV...")
+    print("=" * 60)
+    
+    # Locate the CSV file
+    csv_path = Path(__file__).parent.parent.parent / "Downloads" / "services_full_seed.csv"
+    
+    if not csv_path.exists():
+        # Try alternative paths
+        csv_path = Path("services_full_seed.csv")
+        if not csv_path.exists():
+            print(f"✗ CSV file not found at: {csv_path}")
+            print("Please provide the correct path to services_full_seed.csv")
+            return False
+    
+    print(f"Using CSV file: {csv_path}\n")
+    
+    try:
+        results = import_services_from_csv(str(csv_path), deactivate_existing=False)
+        
+        print("\nImport Results:")
+        print("-" * 60)
+        print(f"✓ Success: {results['success']}")
+        print(f"✓ Imported: {results['imported']} new services")
+        print(f"✓ Updated: {results['updated']} existing services")
+        print(f"✓ Skipped: {results['skipped']} rows with errors")
+        print(f"✓ Deactivated: {results['deactivated']} old services")
+        
+        if results['errors']:
+            print(f"\n⚠ Errors ({len(results['errors'])}):")
+            for error in results['errors'][:10]:  # Show first 10
+                print(f"  - {error}")
+            if len(results['errors']) > 10:
+                print(f"  ... and {len(results['errors']) - 10} more errors")
+        
+        print()
+        
+    except Exception as e:
+        print(f"✗ Import failed: {e}\n")
+        return False
+    
+    print("=" * 60)
+    print("Step 3: Verifying imported data...")
+    print("=" * 60)
+    
+    try:
+        with db_session() as db:
+            # Count total services
+            total = db.query(Service).count()
+            active = db.query(Service).filter(Service.active == True).count()
+            
+            print(f"Total services in database: {total}")
+            print(f"Active services: {active}")
+            
+            # Count by category
+            categories = db.query(Service.category, db.func.count(Service.id)).group_by(
+                Service.category
+            ).all()
+            
+            print("\nServices by category:")
+            print("-" * 60)
+            for category, count in sorted(categories, key=lambda x: x[1], reverse=True):
+                category_name = category or "(No category)"
+                print(f"  {category_name}: {count}")
+            
+            # Show sample services
+            print("\nSample services:")
+            print("-" * 60)
+            samples = db.query(Service).filter(Service.active == True).limit(10).all()
+            for s in samples:
+                variant = f" ({s.variant})" if s.variant else ""
+                price = f"₹{s.price}" if s.price else "No price"
+                print(f"  [{s.category}] {s.name}{variant} - {price}")
+        
+        print("\n✓ Verification completed successfully!")
+        return True
+        
+    except Exception as e:
+        print(f"✗ Verification failed: {e}")
+        return False
+
+
+if __name__ == "__main__":
+    success = test_import()
+    
+    print("\n" + "=" * 60)
+    if success:
+        print("✓ ALL TESTS PASSED!")
+        print("\nNext steps:")
+        print("1. Run the application: python main.py")
+        print("2. Go to Settings → Services tab")
+        print("3. You should see your imported services")
+        print("4. Go to New Bill → You can filter by category")
+    else:
+        print("✗ TESTS FAILED - Please check errors above")
+    print("=" * 60)

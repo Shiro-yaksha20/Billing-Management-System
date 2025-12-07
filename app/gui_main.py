@@ -1,7 +1,25 @@
 from PyQt6.QtWidgets import QMainWindow, QPushButton, QVBoxLayout, QWidget, QMessageBox, QHBoxLayout
+import sys
 from .gui_settings import SettingsWindow
 from .gui_customers import CustomerWindow
 from .gui_billing import BillingWindow
+from .database import init_db
+from .utils import logger
+
+
+def startup_migrations():
+    try:
+        init_db()
+        from .migrate_service_schema import migrate_service_table
+        migrate_service_table()
+        logger.info("Database initialized and migrated successfully.")
+    except Exception as e:
+        logger.error(f"Database initialization/migration failed: {e}")
+        QMessageBox.critical(None, "Database Error", f"Failed to initialize database.\n{e}")
+        sys.exit(1)
+
+# Run before window creation
+startup_migrations()
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -28,6 +46,11 @@ class MainWindow(QMainWindow):
         self.new_bill_button = QPushButton("New Bill")
         self.new_bill_button.clicked.connect(self.open_billing_window)
         button_layout.addWidget(self.new_bill_button)
+
+        # NEW: Export Data button
+        self.export_button = QPushButton("Export Data")
+        self.export_button.clicked.connect(self.open_export_dialog)
+        button_layout.addWidget(self.export_button)
 
         self.layout.addLayout(button_layout)
 
@@ -62,3 +85,11 @@ class MainWindow(QMainWindow):
         """
         self.billing_dialog = BillingWindow(self)
         self.billing_dialog.exec()
+
+    def open_export_dialog(self):
+        """
+        Opens the data export dialog.
+        """
+        from .gui_export import ExportDialog
+        dialog = ExportDialog(self)
+        dialog.exec()

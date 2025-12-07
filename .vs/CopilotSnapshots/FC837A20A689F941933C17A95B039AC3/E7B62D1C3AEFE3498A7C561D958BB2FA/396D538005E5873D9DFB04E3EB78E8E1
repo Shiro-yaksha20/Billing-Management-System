@@ -1,0 +1,35 @@
+﻿from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+from .models import Base
+
+DATABASE_URL = "sqlite:///salon_billing.db"
+
+# Enforce SQLite thread safety and use a single connection pool for app
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": True},
+    poolclass=StaticPool,
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def init_db():
+    """Initializes the database and creates tables if they don't exist."""
+    Base.metadata.create_all(bind=engine)
+
+
+from contextlib import contextmanager
+
+@contextmanager
+def db_session():
+    """Provide a transactional scope around a series of operations."""
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()

@@ -1,0 +1,267 @@
+﻿"""
+CSV Service Import Utility
+
+Imports services from CSV file with columns:
+- category
+- service_name
+- variant
+- display_name
+- price
+- notes
+
+Usage:
+    from app.csv_service_importer import import_services_from_csv
+    import_services_from_csv('path/to/services.csv')
+"""
+
+import csv
+import os
+import shutil
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from typing import Optional
+
+from .database import db_session
+from .models import Service
+from .utils import logger
+
+# Configurable limits
+MAX_IMPORT_ERRORS = 10
+
+
+def import_services_from_csv(
+    csv_file_path: str,
+    clear_existing: bool = False,
+    deactivate_existing: bool = False
+) -> dict:
+    """
+    Import services from CSV file.
+    
+    Args:
+        csv_file_path: Path to CSV file
+        clear_existing: If True, deletes all existing services (DANGEROUS!)
+        deactivate_existing: If True, marks all existing services as inactive before import
+    
+    Returns:
+        Dictionary with import statistics:
+        {
+            'success': True/False,
+            'imported': count,
+            'skipped': count,
+            'updated': 0,
+            'errors': [list of error messages],
+            'cleared': count (if clear_existing=True),
+            'deactivated': count (if deactivate_existing=True)
+        }
+    """
+    results = {
+        'success': False,
+        'imported': 0,
+        'skipped': 0,
+        'updated': 0,
+        'errors': [],
+        'cleared': 0,
+        'deactivated': 0
+    }
+    
+    # Validate file exists
+    if not Path(csv_file_path).exists():
+        results['errors'].append(f"File not found: {csv_file_path}")
+        return results
+    
+    try:
+        with db_session() as db:
+            # Handle clear_existing flag safely
+            if clear_existing:
+                # Create backup before deletion
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                backup_file = f"backup_services_{timestamp}.csv"
+                try:
+                    # export all (active_only=False)
+                    export_services_to_csv(backup_file, active_only=False)
+                    logger.warning(f"Backup created before clearing services: {backup_file}")
+                except Exception as be:
+                    results['errors'].append("Backup failed prior to clearing existing services")
+                    logger.error(f"Backup failed: {be}", exc_info=True)
+                    return results
+
+                # Delete existing services and commit separately
+                count = db.query(Service).delete()
+                db.commit()
+                results['cleared'] = count
+                logger.warning(f"DELETED {count} existing services - backup at {backup_file}")
+            
+            # Handle deactivate_existing flag
+            if deactivate_existing and not clear_existing:
+                count = db.query(Service).update({'active': False})
+                results['deactivated'] = count
+                logger.info(f"Deactivated {count} existing services.")
+            
+            # Read CSV file
+            with open(csv_file_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                
+                # Validate required columns
+                required_cols = {'category', 'service_name', 'display_name', 'price'}
+                if not required_cols.issubset(reader.fieldnames or []):
+                    missing = required_cols - set(reader.fieldnames or [])
+                    results['errors'].append(f"Missing required columns: {missing}")
+                    return results
+                
+                # Start nested transaction (savepoint) for bulk import
+                sp = db.begin_nested()
+                try:
+                    for row_num, row in enumerate(reader, start=2):  # Start at 2 (after header)
+                        try:
+                            # Sanitize and validate fields
+                            display_name = (row.get('display_name') or '').strip()
+                            service_name = (row.get('service_name') or '').strip()
+                            category = (row.get('category') or '').strip()
+                            variant = (row.get('variant') or '').strip() or None
+                            notes = (row.get('notes') or '').strip() or None
+
+                            if not display_name or not service_name:
+                                results['errors'].append(
+                                    f"Row {row_num}: Missing service_name/display_name"
+                                )
+                                results['skipped'] += 1
+                                continue
+
+                            # Parse price
+                            try:
+                                price = Decimal(row['price']) if row['price'] else None
+                                if price is not None and price < 0:
+                                    raise InvalidOperation("negative price")
+                            except (InvalidOperation, ValueError):
+                                results['errors'].append(
+                                    f"Row {row_num}: Invalid price '{row['price']}'"
+                                )
+                                results['skipped'] += 1
+                                continue
+                            
+                            # Check if service already exists (by display_name)
+                            existing = db.query(Service).filter(
+                                Service.display_name == display_name
+                            ).first()
+                            
+                            if existing:
+                                # Update existing service
+                                existing.category = category or None
+                                existing.name = service_name
+                                existing.variant = variant
+                                existing.display_name = display_name
+                                existing.price = price
+                                existing.notes = notes
+                                existing.active = True  # Reactivate if was inactive
+                                results['updated'] += 1
+                            else:
+                                # Create new service
+                                service = Service(
+                                    category=category or None,
+                                    name=service_name,
+                                    variant=variant,
+                                    display_name=display_name,
+                                    price=price,
+                                    notes=notes,
+                                    active=True
+                                )
+                                db.add(service)
+                                results['imported'] += 1
+                        
+                        except Exception as e:
+                            results['errors'].append(f"Row {row_num}: {str(e)}")
+                            results['skipped'] += 1
+                            logger.error(f"Error importing row {row_num}: {e}")
+                            
+                            # Abort if too many errors
+                            if len(results['errors']) > MAX_IMPORT_ERRORS:
+                                sp.rollback()
+                                results['errors'].insert(0, "Import aborted: too many errors")
+                                return results
+                    
+                    # Success path, keep savepoint
+                except Exception as e:
+                    # Rollback entire import block on exception
+                    sp.rollback()
+                    logger.error("Import failed, rolled back to savepoint", exc_info=True)
+                    raise
+            
+        results['success'] = len(results['errors']) == 0
+        logger.info(
+            f"CSV import completed: {results['imported']} imported, "
+            f"{results['updated']} updated, {results['skipped']} skipped, "
+            f"{len(results['errors'])} errors"
+        )
+        
+    except Exception as e:
+        results['errors'].append(f"Fatal error: {str(e)}")
+        logger.error(f"CSV import failed: {e}", exc_info=True)
+    
+    return results
+
+
+def export_services_to_csv(csv_file_path: str, active_only: bool = False) -> bool:
+    """
+    Export all services to CSV file.
+    
+    Args:
+        csv_file_path: Output file path
+        active_only: If True, only exports active services
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Validate and prepare output path
+        output_path = Path(csv_file_path)
+        if output_path.exists():
+            logger.warning(f"Overwriting existing file: {csv_file_path}")
+        if not output_path.parent.exists():
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+        if not os.access(output_path.parent, os.W_OK):
+            raise PermissionError(f"Cannot write to directory: {output_path.parent}")
+
+        with db_session() as db:
+            query = db.query(Service)
+            if active_only:
+                query = query.filter(Service.active == True)
+            
+            services = query.order_by(Service.category, Service.name, Service.variant).all()
+            
+            # Write to temporary file first
+            temp_file = str(output_path) + ".tmp"
+            try:
+                with open(temp_file, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    
+                    # Write header
+                    writer.writerow([
+                        'category', 'service_name', 'variant', 'display_name', 'price', 'notes'
+                    ])
+                    
+                    # Write data
+                    for service in services:
+                        writer.writerow([
+                            service.category or '',
+                            service.name,
+                            service.variant or '',
+                            service.display_name or service.name,
+                            str(service.price) if service.price else '',
+                            service.notes or ''
+                        ])
+                
+                # Move temp to final only after successful write
+                shutil.move(temp_file, output_path)
+                logger.info(f"Exported {len(services)} services to {csv_file_path}")
+                return True
+            finally:
+                if os.path.exists(temp_file):
+                    try:
+                        os.remove(temp_file)
+                    except Exception:
+                        pass
+    
+    except Exception as e:
+        logger.error(f"Export failed: {e}", exc_info=True)
+        return False

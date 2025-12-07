@@ -1,10 +1,15 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from .models import Base
+from .constants import DATABASE_URL
 
-DATABASE_URL = "sqlite:///salon_billing.db"
-
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# Enforce SQLite thread safety and use a single connection pool for app
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": True},
+    poolclass=StaticPool,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

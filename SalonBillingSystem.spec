@@ -3,8 +3,65 @@
 a = Analysis(['main.py'],
              pathex=[],
              binaries=[],
-             datas=[],
-             hiddenimports=['keyring.backends.Windows'],
+             datas=[('app', 'app')],
+             hiddenimports=[
+                 # Keyring backend (Windows)
+                 'keyring.backends.Windows',
+
+                 # PyQt6 core and common submodules
+                 'PyQt6',
+                 'PyQt6.QtWidgets',
+                 'PyQt6.QtCore',
+                 'PyQt6.QtGui',
+                 'PyQt6.QtNetwork',
+                 'PyQt6.QtPrintSupport',
+                 'PyQt6.QtSvg',
+                 'PyQt6.QtSvgWidgets',
+
+                 # SQLAlchemy ORM and related
+                 'sqlalchemy',
+                 'sqlalchemy.orm',
+                 'sqlalchemy.sql',
+                 'sqlalchemy.ext.declarative',
+
+                 # ReportLab for PDF generation
+                 'reportlab',
+                 'reportlab.platypus',
+                 'reportlab.pdfgen',
+                 'reportlab.pdfgen.canvas',
+                 'reportlab.lib',
+                 'reportlab.lib.styles',
+                 'reportlab.lib.pagesizes',
+                 'reportlab.lib.units',
+
+                 # Requests HTTP stack (for WhatsApp client)
+                 'requests',
+                 'urllib3',
+                 'certifi',
+                 'charset_normalizer',
+                 'idna',
+
+                 # Excel export (openpyxl)
+                 'openpyxl',
+                 'et_xmlfile',
+
+                 # Application modules
+                 'app',
+                 'app.database',
+                 'app.models',
+                 'app.gui_main',
+                 'app.gui_billing',
+                 'app.gui_customers',
+                 'app.gui_settings',
+                 'app.gui_history',
+                 'app.whatsapp_client',
+                 'app.pdf_generator',
+                 'app.settings_service',
+                 'app.backup_service',
+                 'app.report_service',
+                 'app.constants',
+                 'app.utils',
+             ],
              hookspath=[],
              runtime_hooks=[],
              excludes=[],

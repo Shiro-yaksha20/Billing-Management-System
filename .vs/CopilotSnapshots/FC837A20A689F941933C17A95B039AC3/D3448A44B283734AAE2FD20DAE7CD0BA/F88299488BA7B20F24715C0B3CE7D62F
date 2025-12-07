@@ -1,0 +1,41 @@
+﻿# Receipt Features Completion Report
+Date: 2025-12-07
+
+## Overview
+Implemented professional receipt features per plan.
+
+## Changes Completed
+
+1. Models
+- Updated `app/models.py` (`Bill`): added `transaction_id` and `payment_status` columns.
+
+2. Migration
+- Created `app/migrate_bill_receipt_fields.py` to add new columns for existing databases.
+
+3. Settings UI
+- Modified `app/gui_settings.py` General tab:
+  - Added inputs: `salon_instagram`, `salon_tagline`, `salon_logo_path` (with Browse), `google_review_link`, `receipt_footer_message`.
+  - Implemented load/save for these settings.
+  - Added logo file browser handler.
+
+4. Billing UI
+- Modified `app/gui_billing.py` Payment section:
+  - Added `transaction_id_input` and `payment_status_combo`.
+  - Persisted to `Bill` in `save_bill()`.
+
+5. PDF Generator
+- Modified `app/pdf_generator.py`:
+  - Header includes phone, Instagram, GST.
+  - Invoice details include payment method, status, and transaction ID.
+  - Service names show variant.
+  - Totals formatting improved and TOTAL emphasized.
+  - Stylist attribution added.
+  - Footer uses `receipt_footer_message` and Instagram CTA.
+
+## Next Actions
+- Run migration: `python -m app.migrate_bill_receipt_fields`
+- Optionally install QR dependencies: `pip install qrcode[pil] Pillow`
+- Test receipts with various scenarios.
+
+## Status
+Completed per plan. Pending migration run and end-to-end tests.

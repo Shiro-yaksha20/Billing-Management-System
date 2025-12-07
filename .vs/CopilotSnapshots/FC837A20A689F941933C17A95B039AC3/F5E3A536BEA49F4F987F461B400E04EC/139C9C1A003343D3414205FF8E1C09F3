@@ -1,0 +1,888 @@
+﻿# Professional Receipt Implementation Plan
+**Date**: 2025-01-27  
+**Project**: Salon Billing System - Receipt Enhancement  
+**Status**: PLANNING PHASE - No Implementation Yet
+
+---
+
+## Objective
+
+Transform the current basic receipt into a professional salon receipt format matching the provided example with:
+- Branded header with logo support
+- Transaction ID tracking
+- Instagram/social media integration
+- Stylist attribution
+- QR code for reviews
+- Professional formatting
+
+---
+
+## Current State Analysis
+
+### Existing Receipt Structure (in `app/pdf_generator.py`)
+```
+Current Receipt:
+- Basic header (salon name, address)
+- Bill number and date
+- Customer info
+- Simple service table
+- Basic totals
+- Thank you message
+```
+
+### Missing Elements
+- Logo image support
+- Tagline
+- Instagram handle
+- Transaction ID field
+- Payment status display
+- Service variants in table
+- Stylist name attribution
+- QR code for reviews
+- Professional formatting/styling
+
+---
+
+## Required Changes by File
+
+### 1. DATABASE LAYER
+
+#### File: `app/models.py`
+Section: `Bill` class (around line 72)  
+Changes Required:
+```python
+# ADD these new columns to Bill class:
+transaction_id = Column(String)           # For UPI/Card transaction IDs
+payment_status = Column(String, default="Paid")  # Paid/Pending/Cancelled
+```
+
+Why: Need to store transaction details that aren't currently captured.
+
+---
+
+#### File: `app/migrate_bill_receipt_fields.py` (NEW FILE)
+Purpose: Add new columns to existing database  
+Location: Create in `app/` directory  
+What it does:
+```python
+# Migration script to add:
+# 1. transaction_id column to bill table
+# 2. payment_status column to bill table
+# Run with: python -m app.migrate_bill_receipt_fields
+```
+
+Why: Existing databases won't have these columns, need migration.
+
+---
+
+### 2. SETTINGS LAYER
+
+#### File: `app/gui_settings.py`
+Section 1: `setup_general_tab()` method (around line 75)  
+Changes Required:
+
+Add Input Fields:
+```python
+# After existing fields (gstin, tax, etc.)
+
+# Instagram Handle
+self.salon_instagram_input = QLineEdit()
+self.salon_instagram_input.setPlaceholderText("@yourhandle")
+
+# Tagline
+self.salon_tagline_input = QLineEdit()
+self.salon_tagline_input.setPlaceholderText("Your Beauty, Our Passion")
+
+# Logo Path (with browse button)
+self.salon_logo_path_input = QLineEdit()
+self.salon_logo_path_input.setReadOnly(True)
+self.browse_logo_button = QPushButton("Browse...")
+# Connect browse button to file dialog
+
+# Google Review Link
+self.google_review_link_input = QLineEdit()
+self.google_review_link_input.setPlaceholderText("https://g.page/r/...")
+
+# Footer Message
+self.receipt_footer_message_input = QTextEdit()
+self.receipt_footer_message_input.setMaximumHeight(100)
+self.receipt_footer_message_input.setPlaceholderText("Thank you for visiting!")
+```
+
+Add to Form Layout:
+```python
+layout.addRow("Instagram Handle:", self.salon_instagram_input)
+layout.addRow("Tagline:", self.salon_tagline_input)
+
+# Logo with browse button (horizontal layout)
+logo_layout = QHBoxLayout()
+logo_layout.addWidget(self.salon_logo_path_input)
+logo_layout.addWidget(self.browse_logo_button)
+layout.addRow("Salon Logo:", logo_layout)
+
+layout.addRow("Google Review Link:", self.google_review_link_input)
+layout.addRow("Receipt Footer:", self.receipt_footer_message_input)
+```
+
+Why: Users need UI to input these settings.
+
+---
+
+Section 2: `load_general_settings()` method (around line 95)  
+Changes Required:
+```python
+# Load new settings from database
+self.salon_instagram_input.setText(
+    settings_service.get_setting("salon_instagram", "")
+)
+self.salon_tagline_input.setText(
+    settings_service.get_setting("salon_tagline", "")
+)
+self.salon_logo_path_input.setText(
+    settings_service.get_setting("salon_logo_path", "")
+)
+self.google_review_link_input.setText(
+    settings_service.get_setting("google_review_link", "")
+)
+self.receipt_footer_message_input.setPlainText(
+    settings_service.get_setting("receipt_footer_message", "Thank you for visiting!")
+)
+```
+
+Why: Populate UI with saved values when Settings window opens.
+
+---
+
+Section 3: `save_general_settings()` method (around line 135)  
+Changes Required:
+```python
+# Save new settings to database
+settings_service.set_setting("salon_instagram", 
+    self.salon_instagram_input.text().strip())
+settings_service.set_setting("salon_tagline", 
+    self.salon_tagline_input.text().strip())
+settings_service.set_setting("salon_logo_path", 
+    self.salon_logo_path_input.text().strip())
+settings_service.set_setting("google_review_link", 
+    self.google_review_link_input.text().strip())
+settings_service.set_setting("receipt_footer_message", 
+    self.receipt_footer_message_input.toPlainText().strip())
+```
+
+Why: Persist user inputs to database.
+
+---
+
+Section 4: Add browse logo method (new method)  
+Changes Required:
+```python
+def browse_logo_file(self):
+    """Open file dialog to select logo image."""
+    file_path, _ = QFileDialog.getOpenFileName(
+        self,
+        "Select Logo Image",
+        "",
+        "Images (*.png *.jpg *.jpeg *.bmp);;All Files (*)"
+    )
+    
+    if file_path:
+        self.salon_logo_path_input.setText(file_path)
+```
+
+Connect in `setup_general_tab()`:
+```python
+self.browse_logo_button.clicked.connect(self.browse_logo_file)
+```
+
+Why: Users need easy way to select logo file.
+
+---
+
+### 3. BILLING UI LAYER
+
+#### File: `app/gui_billing.py`
+Section 1: `__init__()` method - Payment section (around line 150)  
+Changes Required:
+
+Add Transaction ID Input:
+```python
+# After payment_method_combo
+self.transaction_id_input = QLineEdit()
+self.transaction_id_input.setPlaceholderText("Enter transaction ID for UPI/Card")
+payment_layout.addRow("Transaction ID:", self.transaction_id_input)
+
+# Add Payment Status dropdown
+self.payment_status_combo = QComboBox()
+self.payment_status_combo.addItems(["Paid", "Pending"])
+payment_layout.addRow("Payment Status:", self.payment_status_combo)
+```
+
+Optional Enhancement - Auto-show/hide based on payment method:
+```python
+# Connect signal to show/hide transaction ID based on payment method
+self.payment_method_combo.currentTextChanged.connect(self.toggle_transaction_id_visibility)
+
+def toggle_transaction_id_visibility(self, payment_method):
+    """Show transaction ID field only for UPI/Card payments."""
+    show_transaction = payment_method in ["UPI", "Card"]
+    self.transaction_id_input.setVisible(show_transaction)
+    # Also update label visibility
+```
+
+Why: Capture transaction details at billing time.
+
+---
+
+Section 2: `save_bill()` method (around line 310)  
+Changes Required:
+```python
+new_bill = Bill(
+    customer_id=self.selected_customer['id'],
+    staff_id=self.staff_combo.currentData(),
+    payment_method=self.payment_method_combo.currentText(),
+    
+    # ADD THESE NEW FIELDS:
+    transaction_id=self.transaction_id_input.text().strip() or None,
+    payment_status=self.payment_status_combo.currentText(),
+)
+```
+
+Why: Save the new fields to database when creating bill.
+
+---
+
+### 4. PDF GENERATION LAYER
+
+#### File: `app/pdf_generator.py`
+Section 1: Import statements (top of file, around line 1-10)  
+Changes Required:
+```python
+# ADD these new imports:
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+from reportlab.platypus import Image, KeepTogether
+from reportlab.lib.utils import ImageReader
+from reportlab.graphics.shapes import Drawing, Line
+from reportlab.graphics.barcode.qr import QrCodeWidget
+from reportlab.graphics import renderPDF
+from reportlab.lib.colors import HexColor
+```
+
+Why: Need additional ReportLab components for enhanced receipt.
+
+---
+
+Section 2: `generate_receipt_pdf()` function - Header section (around line 40)  
+Current Code:
+```python
+story.append(Paragraph(settings_service.get_setting("salon_name", "Your Salon"), styles['h1']))
+story.append(Paragraph(settings_service.get_setting("salon_address", "123 Salon St."), styles['Normal']))
+```
+
+Changes Required:
+```python
+# NEW HEADER STRUCTURE:
+
+# 1. Logo (if exists)
+logo_path = settings_service.get_setting("salon_logo_path", "")
+if logo_path and os.path.exists(logo_path):
+    try:
+        logo = Image(logo_path, width=2*inch, height=1*inch)
+        logo.hAlign = 'CENTER'
+        story.append(logo)
+        story.append(Spacer(1, 12))
+    except Exception as e:
+        logger.warning(f"Could not load logo: {e}")
+
+# 2. Salon Name (larger, bold)
+salon_name_style = ParagraphStyle(
+    'SalonName',
+    parent=styles['Heading1'],
+    fontSize=18,
+    textColor=HexColor('#000000'),
+    alignment=TA_CENTER,
+    spaceAfter=6
+)
+story.append(Paragraph(
+    settings_service.get_setting("salon_name", "YOUR SALON"), 
+    salon_name_style
+))
+
+# 3. Tagline (if exists)
+tagline = settings_service.get_setting("salon_tagline", "")
+if tagline:
+    tagline_style = ParagraphStyle(
+        'Tagline',
+        parent=styles['Normal'],
+        fontSize=10,
+        alignment=TA_CENTER,
+        textColor=HexColor('#666666'),
+        spaceAfter=12
+    )
+    story.append(Paragraph(tagline, tagline_style))
+
+# 4. Contact Info (centered)
+contact_style = ParagraphStyle(
+    'Contact',
+    parent=styles['Normal'],
+    fontSize=9,
+    alignment=TA_CENTER,
+    spaceAfter=4
+)
+
+story.append(Paragraph(
+    settings_service.get_setting("salon_address", ""), 
+    contact_style
+))
+story.append(Paragraph(
+    f"Phone: {settings_service.get_setting('salon_phone', '')}", 
+    contact_style
+))
+
+# 5. Instagram handle
+instagram = settings_service.get_setting("salon_instagram", "")
+if instagram:
+    story.append(Paragraph(f"Instagram: {instagram}", contact_style))
+
+# 6. GST Number
+gstin = settings_service.get_setting("salon_gstin", "")
+if gstin:
+    story.append(Paragraph(f"GST: {gstin}", contact_style))
+
+# 7. Separator line
+story.append(Spacer(1, 12))
+story.append(HRFlowable(width="100%", thickness=1, color=HexColor('#000000')))
+story.append(Spacer(1, 12))
+```
+
+Why: Professional header matching salon branding standards.
+
+---
+
+Section 3: Invoice Information section (around line 80)  
+Current Code:
+```python
+story.append(Paragraph(f"Receipt for Bill #{bill.id}", styles['h2']))
+story.append(Paragraph(f"Date: {bill.bill_datetime.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
+```
+
+Changes Required:
+```python
+# Two-column layout for invoice info
+invoice_data = [
+    [
+        Paragraph(f"<b>Invoice No:</b> {bill.bill_number}", styles['Normal']),
+        Paragraph(f"<b>Date:</b> {bill.bill_datetime.strftime('%Y-%m-%d')}", styles['Normal'])
+    ],
+    [
+        Paragraph(f"<b>Payment Method:</b> {bill.payment_method} ({bill.payment_status})", styles['Normal']),
+        Paragraph("", styles['Normal'])  # Empty cell for alignment
+    ]
+]
+
+# Add transaction ID row if exists
+if bill.transaction_id:
+    invoice_data.append([
+        Paragraph(f"<b>Transaction ID:</b> {bill.transaction_id}", styles['Normal']),
+        Paragraph("", styles['Normal'])
+    ])
+
+invoice_table = Table(invoice_data, colWidths=[3*inch, 3*inch])
+invoice_table.setStyle(TableStyle([
+    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+    ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+]))
+story.append(invoice_table)
+story.append(Spacer(1, 12))
+```
+
+Why: Display transaction details and payment status.
+
+---
+
+Section 4: Service Table (around line 120)  
+Current Code:
+```python
+data = [["Service", "Qty", "Unit Price", "Total"]]
+for item in bill.items:
+    data.append([
+        item.service.name,
+        str(item.quantity),
+        f"₹{item.unit_price:.2f}",
+        f"₹{item.line_total:.2f}"
+    ])
+```
+
+Changes Required:
+```python
+# Enhanced table with variants
+data = [["Service", "Qty", "Price", "Total"]]
+
+for item in bill.items:
+    # Build service name with variant
+    service_name = item.service.display_name or item.service.name
+    
+    # Append variant in parentheses if exists
+    if item.service.variant:
+        service_name = f"{service_name} ({item.service.variant})"
+    
+    data.append([
+        service_name,
+        str(item.quantity),
+        f"{item.unit_price:.0f}",  # No decimals for cleaner look
+        f"{item.line_total:.0f}"
+    ])
+
+# Improved table styling
+table = Table(data, colWidths=[3.5*inch, 0.5*inch, 1*inch, 1*inch])
+style = TableStyle([
+    # Header row
+    ('BACKGROUND', (0, 0), (-1, 0), HexColor('#000000')),
+    ('TEXTCOLOR', (0, 0), (-1, 0), HexColor('#FFFFFF')),
+    ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+    ('FONTSIZE', (0, 0), (-1, 0), 10),
+    ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+    ('TOPPADDING', (0, 0), (-1, 0), 8),
+    
+    # Data rows
+    ('BACKGROUND', (0, 1), (-1, -1), HexColor('#F5F5F5')),
+    ('ALIGN', (0, 1), (0, -1), 'LEFT'),      # Service name left
+    ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),    # Numbers right
+    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+    ('FONTSIZE', (0, 1), (-1, -1), 9),
+    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [HexColor('#FFFFFF'), HexColor('#F9F9F9')]),
+    
+    # Grid lines
+    ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#CCCCCC')),
+    ('LINEBELOW', (0, 0), (-1, 0), 2, HexColor('#000000')),
+])
+table.setStyle(style)
+story.append(table)
+```
+
+Why: Show service variants and improve visual presentation.
+
+---
+
+Section 5: Summary/Totals section (around line 160)  
+Current Code:
+```python
+story.append(Paragraph(f"Subtotal: ₹{bill.subtotal:.2f}", styles['Normal']))
+story.append(Paragraph(f"Discount: -₹{bill.discount_amount:.2f}", styles['Normal']))
+story.append(Paragraph(f"Tax ({bill.tax_percent}%): +₹{bill.tax_amount:.2f}", styles['Normal']))
+story.append(Paragraph(f"Total: ₹{bill.total:.2f}", styles['h3']))
+```
+
+Changes Required:
+```python
+# Separator line before summary
+story.append(Spacer(1, 12))
+story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor('#CCCCCC')))
+story.append(Spacer(1, 6))
+
+# Right-aligned summary
+summary_style = ParagraphStyle(
+    'Summary',
+    parent=styles['Normal'],
+    fontSize=10,
+    alignment=TA_RIGHT,
+    spaceAfter=4
+)
+
+story.append(Paragraph(f"Subtotal: <b>{bill.subtotal:.0f}</b>", summary_style))
+
+# Show discount only if > 0
+if bill.discount_amount > 0:
+    story.append(Paragraph(f"Discount: <b>-{bill.discount_amount:.0f}</b>", summary_style))
+
+# Tax with percentage display
+story.append(Paragraph(f"Tax ({bill.tax_percent}%): <b>{bill.tax_amount:.0f}</b>", summary_style))
+
+story.append(Spacer(1, 6))
+story.append(HRFlowable(width="100%", thickness=2, color=HexColor('#000000')))
+story.append(Spacer(1, 6))
+
+# Total (larger, bold)
+total_style = ParagraphStyle(
+    'Total',
+    parent=styles['Heading2'],
+    fontSize=14,
+    alignment=TA_RIGHT,
+    textColor=HexColor('#000000'),
+    spaceAfter=12
+)
+story.append(Paragraph(f"TOTAL: <b>₹{bill.total:.0f}</b>", total_style))
+
+story.append(HRFlowable(width="100%", thickness=2, color=HexColor('#000000')))
+story.append(Spacer(1, 12))
+```
+
+Why: Professional summary format with emphasis on total.
+
+---
+
+Section 6: Stylist Attribution (NEW - add after totals)  
+Location: After totals section, before footer  
+Changes Required:
+```python
+# Stylist name section
+stylist_style = ParagraphStyle(
+    'Stylist',
+    parent=styles['Normal'],
+    fontSize=10,
+    alignment=TA_LEFT,
+    spaceBefore=12,
+    spaceAfter=12
+)
+
+stylist_name = bill.staff.name
+story.append(Paragraph(f"<b>Served By:</b> {stylist_name}", stylist_style))
+story.append(Spacer(1, 12))
+```
+
+Why: Attribute service to stylist for accountability and customer loyalty.
+
+---
+
+Section 7: Footer section (around line 200)  
+Current Code:
+```python
+story.append(Paragraph(
+    settings_service.get_setting("thank_you_message", "Thanks for your visit!"), 
+    styles['Italic']
+))
+```
+
+Changes Required:
+```python
+# Footer section with centered alignment
+footer_style = ParagraphStyle(
+    'Footer',
+    parent=styles['Normal'],
+    fontSize=9,
+    alignment=TA_CENTER,
+    textColor=HexColor('#333333'),
+    spaceAfter=6
+)
+
+# 1. Thank you message
+footer_msg = settings_service.get_setting("receipt_footer_message", "Thank you for visiting!")
+story.append(Paragraph(footer_msg, footer_style))
+
+# 2. Instagram call-to-action
+instagram = settings_service.get_setting("salon_instagram", "")
+if instagram:
+    story.append(Paragraph(f"Follow us on Instagram {instagram}", footer_style))
+
+# 3. QR Code for reviews
+review_link = settings_service.get_setting("google_review_link", "")
+if review_link:
+    story.append(Paragraph("Scan the QR code to leave a review!", footer_style))
+    story.append(Spacer(1, 6))
+    
+    try:
+        # Generate QR code
+        qr = QrCodeWidget(review_link)
+        qr_bounds = qr.getBounds()
+        qr_width = qr_bounds[2] - qr_bounds[0]
+        qr_height = qr_bounds[3] - qr_bounds[1]
+        
+        # Create drawing with QR code centered
+        qr_drawing = Drawing(100, 100, transform=[100./qr_width, 0, 0, 100./qr_height, 0, 0])
+        qr_drawing.add(qr)
+        qr_drawing.hAlign = 'CENTER'
+        
+        story.append(qr_drawing)
+    except Exception as e:
+        logger.warning(f"Could not generate QR code: {e}")
+        story.append(Paragraph(f"<font size=8>{review_link}</font>", footer_style))
+
+# Final separator
+story.append(Spacer(1, 12))
+story.append(HRFlowable(width="100%", thickness=1, color=HexColor('#000000')))
+```
+
+Why: Professional footer with review mechanism for customer feedback.
+
+---
+
+## Dependencies
+
+### Current Dependencies (already in `requirements.txt`):
+```
+reportlab>=3.6.0
+```
+
+### Additional Required:
+```
+qrcode[pil]>=7.3.1  # For QR code generation
+Pillow>=9.0.0       # For image processing (logo, QR)
+```
+
+Add to: `requirements.txt`
+
+---
+
+## Implementation Sequence
+
+### Phase 1: Database Setup (Foundation)
+Order: Must be done first!
+
+1. Modify: `app/models.py`
+   - Add `transaction_id` column to Bill
+   - Add `payment_status` column to Bill
+
+2. Create: `app/migrate_bill_receipt_fields.py`
+   - Write migration script
+   - Test on backup database first
+
+3. Run Migration:
+```
+python -m app.migrate_bill_receipt_fields
+```
+
+4. Verify:
+- Check database schema
+- Confirm columns exist
+- Test with sample data
+
+---
+
+### Phase 2: Settings UI (Configuration)
+Order: Second - allows data input
+
+5. Modify: `app/gui_settings.py`
+   - Add input fields in `setup_general_tab()`
+   - Add browse logo button
+   - Implement `browse_logo_file()` method
+   - Update `load_general_settings()`
+   - Update `save_general_settings()`
+
+6. Test Settings:
+- Open Settings → General tab
+- Verify all new fields visible
+- Test logo browser
+- Save and reload - verify persistence
+
+---
+
+### Phase 3: Billing UI (Data Capture)
+Order: Third - captures transaction data
+
+7. Modify: `app/gui_billing.py`
+   - Add transaction ID input in `__init__()`
+   - Add payment status combo
+   - Update `save_bill()` to save new fields
+   - Optional: Add auto-show/hide logic
+
+8. Test Billing:
+- Create new bill
+- Enter transaction ID
+- Save and verify in database
+- Test with/without transaction ID
+
+---
+
+### Phase 4: PDF Generation (Display)
+Order: Last - uses all previous data
+
+9. Install Dependencies:
+```
+pip install qrcode[pil] Pillow
+```
+
+10. Modify: `app/pdf_generator.py`
+    - Update imports
+    - Rewrite header section
+    - Update invoice info section
+    - Enhance service table
+    - Improve summary section
+    - Add stylist attribution
+    - Add enhanced footer
+    - Add QR code generation
+
+11. Test PDF Generation:
+- Generate receipt with all fields
+- Test with logo / without logo
+- Test with transaction ID / without
+- Test QR code generation
+- Verify formatting on print
+
+---
+
+### Phase 5: Integration Testing (Validation)
+Order: After all components done
+
+12. End-to-End Test:
+- Configure all settings
+- Create complete bill
+- Generate PDF
+- Verify all elements present
+- Print test receipt
+
+13. Edge Case Testing:
+- Receipt without logo
+- Receipt without Instagram
+- Receipt without QR code
+- Receipt with Cash (no transaction ID)
+- Receipt with very long service names
+- Receipt with many services (pagination)
+
+---
+
+## Testing Checklist
+
+### Database Tests:
+- [ ] Migration runs without errors
+- [ ] New columns exist in bill table
+- [ ] Can save transaction_id = NULL
+- [ ] Can save transaction_id with value
+- [ ] payment_status defaults to "Paid"
+
+### Settings Tests:
+- [ ] Instagram field saves/loads correctly
+- [ ] Tagline field saves/loads correctly
+- [ ] Logo browser opens file dialog
+- [ ] Logo path saves correctly
+- [ ] Review link saves/loads correctly
+- [ ] Footer message saves/loads correctly
+- [ ] Settings persist across app restart
+
+### Billing Tests:
+- [ ] Transaction ID field visible
+- [ ] Transaction ID saves to database
+- [ ] Payment status saves correctly
+- [ ] Can create bill with empty transaction ID
+- [ ] Can create bill with transaction ID filled
+
+### PDF Tests:
+- [ ] Logo displays (if configured)
+- [ ] Tagline displays (if configured)
+- [ ] Instagram handle displays
+- [ ] Transaction ID displays (when present)
+- [ ] Payment method shows correctly
+- [ ] Service variants display in table
+- [ ] Stylist name appears
+- [ ] QR code generates and displays
+- [ ] Footer message appears
+- [ ] All text properly aligned
+- [ ] Receipt prints correctly
+
+---
+
+## Potential Issues & Solutions
+
+### Issue 1: Logo File Not Found
+Problem: User selects logo, moves/deletes file later  
+Solution:
+```python
+if logo_path and os.path.exists(logo_path):
+    # Use logo
+else:
+    # Gracefully skip, show text-only header
+    logger.warning(f"Logo file not found: {logo_path}")
+```
+
+---
+
+### Issue 2: QR Code Library Missing
+Problem: `qrcode` not installed  
+Solution:
+```python
+try:
+    from reportlab.graphics.barcode.qr import QrCodeWidget
+    # Generate QR
+except ImportError:
+    # Fallback: show URL as text
+    logger.warning("QR code library not available")
+    story.append(Paragraph(f"Review us at: {review_link}", footer_style))
+```
+
+---
+
+### Issue 3: Very Long Service Names
+Problem: Table overflow on narrow receipt  
+Solution:
+```python
+# Truncate long names
+service_name = item.service.display_name or item.service.name
+if len(service_name) > 40:
+    service_name = service_name[:37] + "..."
+```
+
+---
+
+### Issue 4: Missing Transaction ID for Old Bills
+Problem: Old bills don't have transaction_id  
+Solution:
+```python
+if bill.transaction_id:
+    # Show transaction ID
+else:
+    # Skip, don't show empty field
+    pass
+```
+
+---
+
+### Issue 5: Pagination with Many Services
+Problem: Receipt spans multiple pages  
+Solution: ReportLab handles automatically, but test with 20+ service bill.
+
+---
+
+## Summary
+
+### Files Modified: 4
+1. `app/models.py` - Add Bill columns
+2. `app/gui_settings.py` - Add settings UI
+3. `app/gui_billing.py` - Add transaction inputs
+4. `app/pdf_generator.py` - Complete receipt redesign
+
+### Files Created: 1
+5. `app/migrate_bill_receipt_fields.py` - Database migration
+
+### New Database Columns: 2
+- `bill.transaction_id` (String, nullable)
+- `bill.payment_status` (String, default "Paid")
+
+### New Settings: 5
+- `salon_instagram` (String)
+- `salon_tagline` (String)
+- `salon_logo_path` (String)
+- `google_review_link` (String)
+- `receipt_footer_message` (Text)
+
+### Dependencies Added: 2
+- `qrcode[pil]>=7.3.1`
+- `Pillow>=9.0.0`
+
+---
+
+## Estimated Implementation Time
+
+| Phase | Time | Complexity |
+|-------|------|------------|
+| Database Setup | 30 min | Low |
+| Settings UI | 1 hour | Medium |
+| Billing UI | 30 min | Low |
+| PDF Generation | 2-3 hours | High |
+| Testing | 1 hour | Medium |
+| TOTAL | 5-6 hours | Medium-High |
+
+---
+
+## Approval Required
+
+Before implementation, confirm:
+- [ ] Receipt format matches business requirements
+- [ ] All required fields identified
+- [ ] Database migration safe to run
+- [ ] Logo image format requirements clear (PNG/JPG)
+- [ ] QR code linking to correct review platform
+- [ ] No additional fields needed
+
+---
+
+**Status:** PLANNING COMPLETE - AWAITING APPROVAL TO IMPLEMENT

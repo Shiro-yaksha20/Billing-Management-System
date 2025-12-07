@@ -1,10 +1,11 @@
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QTableWidget,
-    QTableWidgetItem, QMessageBox, QTextEdit, QHBoxLayout, QFormLayout
+    QTableWidgetItem, QMessageBox, QTextEdit, QHBoxLayout, QFormLayout, QGroupBox, QScrollArea
 )
 from PyQt6.QtCore import Qt
-from .models import Customer
+from .models import Customer, Bill
 from .database import db_session
+import os
 
 class CustomerWindow(QDialog):
     def __init__(self, parent=None):
@@ -37,6 +38,19 @@ class CustomerWindow(QDialog):
         self.notes_area.setReadOnly(True)
         self.layout.addWidget(self.notes_area)
 
+        # Bills history
+        bills_group = QGroupBox("Bill History")
+        bills_layout = QVBoxLayout()
+        self.bills_table = QTableWidget()
+        self.bills_table.setColumnCount(5)
+        self.bills_table.setHorizontalHeaderLabels(["Bill #", "Date", "Total", "Payment", "Status"])
+        bills_layout.addWidget(self.bills_table)
+        self.view_receipt_btn = QPushButton("View Receipt PDF")
+        self.view_receipt_btn.clicked.connect(self.view_selected_receipt)
+        bills_layout.addWidget(self.view_receipt_btn)
+        bills_group.setLayout(bills_layout)
+        self.layout.addWidget(bills_group)
+
         # Buttons
         button_layout = QHBoxLayout()
         self.add_button = QPushButton("Add Customer")
@@ -55,22 +69,27 @@ class CustomerWindow(QDialog):
         self.load_customers()
 
     def load_customers(self, search_term=None):
-        with db_session() as db:
-            query = db.query(Customer)
-            if search_term:
-                query = query.filter(
-                    Customer.name.ilike(f"%{search_term}%") |
-                    Customer.phone.ilike(f"%{search_term}%")
-                )
-            customers = query.all()
+        # Block signals while loading to prevent selection changed from firing
+        self.customer_table.blockSignals(True)
+        try:
+            with db_session() as db:
+                query = db.query(Customer)
+                if search_term:
+                    query = query.filter(
+                        Customer.name.ilike(f"%{search_term}%") |
+                        Customer.phone.ilike(f"%{search_term}%")
+                    )
+                customers = query.all()
 
-            self.customer_table.setRowCount(len(customers))
-            for i, customer in enumerate(customers):
-                self.customer_table.setItem(i, 0, QTableWidgetItem(customer.name))
-                self.customer_table.setItem(i, 1, QTableWidgetItem(customer.phone))
-                last_visit = customer.last_visit_at.strftime("%Y-%m-%d") if customer.last_visit_at else "N/A"
-                self.customer_table.setItem(i, 2, QTableWidgetItem(last_visit))
-                self.customer_table.setItem(i, 3, QTableWidgetItem(str(customer.id)))
+                self.customer_table.setRowCount(len(customers))
+                for i, customer in enumerate(customers):
+                    self.customer_table.setItem(i, 0, QTableWidgetItem(customer.name))
+                    self.customer_table.setItem(i, 1, QTableWidgetItem(customer.phone))
+                    last_visit = customer.last_visit_at.strftime("%Y-%m-%d") if customer.last_visit_at else "N/A"
+                    self.customer_table.setItem(i, 2, QTableWidgetItem(last_visit))
+                    self.customer_table.setItem(i, 3, QTableWidgetItem(str(customer.id)))
+        finally:
+            self.customer_table.blockSignals(False)
 
     def search_customers(self):
         self.load_customers(self.search_input.text())
@@ -79,12 +98,55 @@ class CustomerWindow(QDialog):
         selected_rows = self.customer_table.selectedItems()
         if not selected_rows:
             self.notes_area.clear()
+            self.bills_table.setRowCount(0)
             return
 
-        customer_id = int(selected_rows[3].text())
+        # Get the row index instead of trying to access item [3] directly
+        current_row = self.customer_table.currentRow()
+        if current_row < 0:
+            self.notes_area.clear()
+            self.bills_table.setRowCount(0)
+            return
+            
+        id_item = self.customer_table.item(current_row, 3)
+        if not id_item:
+            self.notes_area.clear()
+            self.bills_table.setRowCount(0)
+            return
+            
+        customer_id = int(id_item.text())
         with db_session() as db:
             customer = db.query(Customer).filter(Customer.id == customer_id).first()
-            self.notes_area.setPlainText(customer.notes if customer else "")
+            if customer:
+                self.notes_area.setPlainText(customer.notes or "")
+                # Load bills
+                bills = db.query(Bill).filter(Bill.customer_id == customer_id).order_by(Bill.bill_datetime.desc()).all()
+                self.bills_table.setRowCount(len(bills))
+                for i, bill in enumerate(bills):
+                    self.bills_table.setItem(i, 0, QTableWidgetItem(str(bill.bill_number or bill.id)))
+                    self.bills_table.setItem(i, 1, QTableWidgetItem(bill.bill_datetime.strftime('%Y-%m-%d') if bill.bill_datetime else ''))
+                    self.bills_table.setItem(i, 2, QTableWidgetItem(f"?{float(bill.total or 0):.0f}"))
+                    self.bills_table.setItem(i, 3, QTableWidgetItem(bill.payment_method or ''))
+                    self.bills_table.setItem(i, 4, QTableWidgetItem(getattr(bill, 'payment_status', 'Paid') or 'Paid'))
+                    # store pdf path in UserRole of first cell
+                    self.bills_table.item(i, 0).setData(Qt.ItemDataRole.UserRole, bill.pdf_path)
+            else:
+                self.notes_area.clear()
+                self.bills_table.setRowCount(0)
+
+    def view_selected_receipt(self):
+        row = self.bills_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "No Bill Selected", "Please select a bill to view.")
+            return
+        pdf_path = self.bills_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        if pdf_path and os.path.exists(pdf_path):
+            try:
+                os.startfile(pdf_path)
+            except Exception:
+                QMessageBox.information(self, "Open Receipt", f"Receipt saved at:\n{pdf_path}")
+        else:
+            QMessageBox.warning(self, "Receipt Not Found", "PDF receipt file not found.")
 
     def add_customer(self):
         dialog = CustomerDialog(self)
@@ -92,12 +154,17 @@ class CustomerWindow(QDialog):
             self.load_customers()
 
     def edit_customer(self):
-        selected_rows = self.customer_table.selectedItems()
-        if not selected_rows:
+        current_row = self.customer_table.currentRow()
+        if current_row < 0:
             QMessageBox.warning(self, "No Customer Selected", "Please select a customer to edit.")
             return
 
-        customer_id = int(selected_rows[3].text())
+        id_item = self.customer_table.item(current_row, 3)
+        if not id_item:
+            QMessageBox.warning(self, "Invalid Selection", "Could not identify the selected customer.")
+            return
+            
+        customer_id = int(id_item.text())
         dialog = CustomerDialog(self, customer_id=customer_id)
         if dialog.exec():
             self.load_customers()
@@ -107,8 +174,14 @@ class CustomerDialog(QDialog):
     def __init__(self, parent=None, customer_id=None):
         super().__init__(parent)
         self.customer_id = customer_id
+        self.setMinimumSize(420, 300)
 
-        self.layout = QFormLayout(self)
+        # Scroll area setup
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        form = QFormLayout(content)
+
         self.name_input = QLineEdit()
         self.phone_input = QLineEdit()
         self.notes_input = QTextEdit()
@@ -118,40 +191,47 @@ class CustomerDialog(QDialog):
             with db_session() as db:
                 customer = db.query(Customer).filter(Customer.id == self.customer_id).first()
                 if customer:
-                    self.name_input.setText(customer.name)
-                    self.phone_input.setText(customer.phone)
-                    self.notes_input.setPlainText(customer.notes)
+                    self.name_input.setText(customer.name or "")
+                    self.phone_input.setText(customer.phone or "")
+                    self.notes_input.setPlainText(customer.notes or "")
         else:
             self.setWindowTitle("Add Customer")
 
-        self.layout.addRow("Name:", self.name_input)
-        self.layout.addRow("Phone:", self.phone_input)
-        self.layout.addRow("Notes:", self.notes_input)
+        form.addRow("Name:", self.name_input)
+        form.addRow("Phone:", self.phone_input)
+        form.addRow("Notes:", self.notes_input)
+        scroll.setWidget(content)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.addWidget(scroll)
 
         button_box = QHBoxLayout()
         save_button = QPushButton("Save")
         cancel_button = QPushButton("Cancel")
         button_box.addWidget(save_button)
         button_box.addWidget(cancel_button)
-        self.layout.addRow(button_box)
+        main_layout.addLayout(button_box)
 
         save_button.clicked.connect(self.save_customer)
         cancel_button.clicked.connect(self.reject)
 
     def save_customer(self):
-        if not self.name_input.text() or not self.phone_input.text():
+        if not self.name_input.text().strip() or not self.phone_input.text().strip():
             QMessageBox.warning(self, "Input Error", "Name and phone number are required.")
             return
 
         with db_session() as db:
             if self.customer_id:
                 customer = db.query(Customer).filter(Customer.id == self.customer_id).first()
+                if not customer:
+                    QMessageBox.critical(self, "Error", "Customer not found in database.")
+                    return
             else:
                 customer = Customer()
                 db.add(customer)
 
-            customer.name = self.name_input.text()
-            customer.phone = self.phone_input.text()
+            customer.name = self.name_input.text().strip()
+            customer.phone = self.phone_input.text().strip()
             customer.notes = self.notes_input.toPlainText()
 
         self.accept()

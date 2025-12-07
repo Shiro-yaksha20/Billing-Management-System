@@ -36,10 +36,14 @@ class Staff(Base, TimestampMixin):
 class Service(Base, TimestampMixin):
     __tablename__ = "service"
     id = Column(Integer, primary_key=True)
+    category = Column(String)  # e.g., "Basic", "Facial", "Bridal"
     name = Column(String, nullable=False)
+    variant = Column(String)  # e.g., "Short", "Medium", "Long", "Honey", "Rica"
+    display_name = Column(String)  # Full formatted name for display
     description = Column(String)
     price = Column(Numeric(10, 2))
     duration_minutes = Column(Integer)
+    notes = Column(Text)  # Pricing notes, special instructions
     active = Column(Boolean, default=True)
 
 
@@ -72,6 +76,8 @@ class Bill(Base, TimestampMixin):
     pdf_path = Column(String)
     whatsapp_status = Column(Enum("Not Sent", "Sent", "Failed", name="whatsapp_status_enum"), default="Not Sent")
     whatsapp_last_error = Column(Text)
+    transaction_id = Column(String)  # UPI/Card transaction reference
+    payment_status = Column(String, default="Paid")  # Redundant with status enum, used for receipt display
 
     customer = relationship("Customer", back_populates="bills")
     staff = relationship("Staff", back_populates="bills")

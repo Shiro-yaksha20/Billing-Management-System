@@ -1,6 +1,7 @@
 import keyring
 from .database import db_session
 from .models import Setting
+from .utils import logger
 
 # The service name for keyring should be unique to the application.
 KEYRING_SERVICE_NAME = "SalonBillingApp"
@@ -56,25 +57,30 @@ def get_secret(key: str) -> str | None:
     """
     try:
         return keyring.get_password(KEYRING_SERVICE_NAME, key)
-    except Exception as e:
-        # Handle potential keyring errors gracefully
-        print(f"Error retrieving secret '{key}': {e}")
+    except Exception:
+        # Avoid exposing key or details; log securely
+        logger.error("Keyring access failed for secret", exc_info=True)
         return None
 
 
-def set_secret(key: str, value: str | None) -> None:
+def set_secret(key: str, value: str | None) -> bool:
     """
     Saves a secret to the secure credential store.
 
     Args:
         key: The key of the secret to save.
         value: The value of the secret. If None, the secret is deleted.
+
+    Returns:
+        True if the secret was written/deleted, False on error.
     """
     try:
         if value is None:
             keyring.delete_password(KEYRING_SERVICE_NAME, key)
         else:
             keyring.set_password(KEYRING_SERVICE_NAME, key, value)
-    except Exception as e:
-        # Handle potential keyring errors gracefully
-        print(f"Error setting secret '{key}': {e}")
+        logger.info("Secret updated")
+        return True
+    except Exception:
+        logger.error("Keyring write failed", exc_info=True)
+        return False
