@@ -1,0 +1,63 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        shell: powershell
+        run: |
+          python -m venv env
+          ./env/Scripts/Activate.ps1
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: PyInstaller build
+        shell: powershell
+        run: |
+          ./env/Scripts/Activate.ps1
+          pyinstaller SalonBillingSystem.spec
+
+      - name: Zip release
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path releases | Out-Null
+          Compress-Archive -Path dist/SalonBillingSystem/* -DestinationPath releases/SalonBillingSystem-${{ github.ref_name }}.zip -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SalonBillingSystem-${{ github.ref_name }}
+          path: releases/SalonBillingSystem-${{ github.ref_name }}.zip
+
+  release:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: SalonBillingSystem-${{ github.ref_name }}
+          path: releases
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: releases/SalonBillingSystem-${{ github.ref_name }}.zip
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
