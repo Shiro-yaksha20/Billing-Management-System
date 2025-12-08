@@ -25,17 +25,14 @@ jobs:
       - name: Install dependencies
         shell: powershell
         run: |
-          python -m venv env
-          ./env/Scripts/Activate.ps1
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
 
       - name: PyInstaller build
         shell: powershell
         run: |
-          ./env/Scripts/Activate.ps1
-          pyinstaller SalonBillingSystem.spec
+          pyinstaller SalonBillingSystem.spec --noconfirm
 
       - name: Zip release
         shell: powershell
