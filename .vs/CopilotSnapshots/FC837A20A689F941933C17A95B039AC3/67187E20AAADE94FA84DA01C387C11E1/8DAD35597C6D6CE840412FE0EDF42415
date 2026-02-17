@@ -1,7 +1,0 @@
-﻿PyQt6
-SQLAlchemy
-reportlab>=3.6.0
-requests
-keyring
-PyInstaller
-openpyxl>=3.0.0

@@ -47,20 +47,59 @@ a = Analysis(['main.py'],
 
                  # Application modules
                  'app',
-                 'app.database',
-                 'app.models',
-                 'app.gui_main',
-                 'app.gui_billing',
-                 'app.gui_customers',
-                 'app.gui_settings',
-                 'app.gui_history',
-                 'app.whatsapp_client',
-                 'app.pdf_generator',
-                 'app.settings_service',
-                 'app.backup_service',
-                 'app.report_service',
                  'app.constants',
-                 'app.utils',
+                 'app.models',
+
+                 # Infrastructure layer
+                 'app.infrastructure.database',
+                 'app.infrastructure.logging',
+                 'app.infrastructure.pdf_generator',
+                 'app.infrastructure.whatsapp_client',
+                 'app.infrastructure.cloud_drive',
+                 'app.infrastructure.crypto',
+
+                 # Service layer
+                 'app.services.billing_service',
+                 'app.services.customer_service',
+                 'app.services.staff_service',
+                 'app.services.service_catalog',
+                 'app.services.settings_service',
+                 'app.services.report_service',
+                 'app.services.notification_service',
+                 'app.services.backup_service',
+                 'app.services.restore_service',
+
+                 # Repository layer
+                 'app.repositories.bill_repository',
+                 'app.repositories.customer_repository',
+                 'app.repositories.staff_repository',
+                 'app.repositories.service_repository',
+                 'app.repositories.settings_repository',
+
+                 # UI layer
+                 'app.ui.main_window',
+                 'app.ui.billing_view',
+                 'app.ui.customer_view',
+                 'app.ui.settings_view',
+                 'app.ui.export_view',
+                 'app.ui.bill_history_view',
+                 'app.ui.dialogs.customer_dialog',
+                 'app.ui.dialogs.customer_selection_dialog',
+                 'app.ui.dialogs.staff_dialog',
+                 'app.ui.dialogs.service_dialog',
+                 'app.ui.dialogs.log_viewer_dialog',
+
+                 # DTO layer
+                 'app.dto.bill_dto',
+                 'app.dto.customer_dto',
+                 'app.dto.backup_dto',
+                 'app.dto.staff_dto',
+                 'app.dto.service_dto',
+                 'app.dto.receipt_dto',
+
+                 # Exceptions
+                 'app.exceptions.business_errors',
+                 'app.exceptions.validation_errors',
              ],
              hookspath=[],
              runtime_hooks=[],

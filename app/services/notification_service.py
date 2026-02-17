@@ -1,0 +1,51 @@
+"""Notification service for outbound messaging."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+
+from ..infrastructure.whatsapp_client import send_whatsapp_message
+from .settings_service import SettingsService
+
+
+@dataclass(frozen=True)
+class NotificationResult:
+    """Result of a notification attempt."""
+
+    success: bool
+    response: dict
+    error_message: Optional[str] = None
+
+
+class NotificationService:
+    """Service for sending notifications."""
+
+    def __init__(self, settings_service: SettingsService) -> None:
+        self._settings_service = settings_service
+
+    def send_whatsapp_receipt(
+        self,
+        phone_number: str,
+        customer_name: str,
+        total: str,
+        attachment_path: Optional[str] = None,
+    ) -> NotificationResult:
+        template = self._settings_service.get_setting(
+            "whatsapp_message_template",
+            "Hi {customer_name}, thank you for visiting {salon_name}. Your bill total is ?{total}.",
+        )
+        message = template.format(
+            customer_name=customer_name,
+            salon_name=self._settings_service.get_setting("salon_name", ""),
+            total=total,
+        )
+        country_code = self._settings_service.get_setting("whatsapp_country_code", "91")
+        full_phone = f"{country_code}{phone_number}"
+        success, response = send_whatsapp_message(
+            full_phone, message, self._settings_service, attachment_path
+        )
+        error_message = None
+        if not success:
+            error_message = str(response)[:500]
+        return NotificationResult(success=success, response=response, error_message=error_message)

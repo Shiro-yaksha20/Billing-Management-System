@@ -1,0 +1,5 @@
+[MASTER]
+ignore=env
+
+[FORMAT]
+max-line-length=88

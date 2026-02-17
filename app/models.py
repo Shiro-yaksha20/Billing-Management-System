@@ -1,6 +1,9 @@
+"""ORM models for the salon billing database."""
+
+from __future__ import annotations
+
 import datetime
 from sqlalchemy import (
-    create_engine,
     Column,
     Integer,
     String,
@@ -18,11 +21,15 @@ Base = declarative_base()
 
 
 class TimestampMixin:
+    """Mixin for created/updated timestamps."""
+
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
 
 class Staff(Base, TimestampMixin):
+    """Staff member record."""
+
     __tablename__ = "staff"
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
@@ -34,6 +41,8 @@ class Staff(Base, TimestampMixin):
 
 
 class Service(Base, TimestampMixin):
+    """Service catalog record."""
+
     __tablename__ = "service"
     id = Column(Integer, primary_key=True)
     category = Column(String)  # e.g., "Basic", "Facial", "Bridal"
@@ -48,6 +57,8 @@ class Service(Base, TimestampMixin):
 
 
 class Customer(Base, TimestampMixin):
+    """Customer record."""
+
     __tablename__ = "customer"
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
@@ -59,6 +70,8 @@ class Customer(Base, TimestampMixin):
 
 
 class Bill(Base, TimestampMixin):
+    """Bill header record."""
+
     __tablename__ = "bill"
     id = Column(Integer, primary_key=True)
     bill_number = Column(String, unique=True)
@@ -85,6 +98,8 @@ class Bill(Base, TimestampMixin):
 
 
 class BillItem(Base):
+    """Bill line item record."""
+
     __tablename__ = "bill_item"
     id = Column(Integer, primary_key=True)
     bill_id = Column(Integer, ForeignKey("bill.id"))
@@ -98,6 +113,8 @@ class BillItem(Base):
 
 
 class Setting(Base):
+    """Application setting record."""
+
     __tablename__ = "setting"
     id = Column(Integer, primary_key=True)
     key = Column(String, unique=True, nullable=False)

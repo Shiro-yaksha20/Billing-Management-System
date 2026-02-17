@@ -9,16 +9,30 @@ salon_billing.db
 # Generated files
 receipts/
 logs/
+backups/
+backup_services_*.csv
 
 # Virtual environment
 venv/
 .venv/
+env/
 
 # IDE specific files
 .idea/
 .vscode/
+.vs/
 
 # Build artifacts
 build/
 dist/
 *.egg-info/
+releases/
+
+# Coverage / testing
+htmlcov/
+.coverage
+.pytest_cache/
+
+# OS files
+Thumbs.db
+.DS_Store

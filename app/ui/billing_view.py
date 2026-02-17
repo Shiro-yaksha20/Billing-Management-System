@@ -1,0 +1,563 @@
+"""Billing view for creating new bills."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from decimal import Decimal
+import os
+import tempfile
+
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ..dto.bill_dto import BillItemInput, BillOptions
+from ..dto.customer_dto import CustomerData
+from ..dto.service_dto import ServiceData
+from ..exceptions.validation_errors import ValidationError
+from ..services.billing_service import BillingService
+from ..services.customer_service import CustomerService
+from ..services.notification_service import NotificationService
+from ..services.service_catalog import ServiceCatalog
+from ..services.settings_service import SettingsService
+from ..services.staff_service import StaffService
+from .dialogs.customer_dialog import CustomerDialog
+from .dialogs.customer_selection_dialog import CustomerSelectionDialog
+
+
+class BillingView(QDialog):
+    """Dialog for creating a new bill."""
+
+    def __init__(
+        self,
+        billing_service: BillingService,
+        customer_service: CustomerService,
+        staff_service: StaffService,
+        service_catalog: ServiceCatalog,
+        notification_service: NotificationService,
+        settings_service: SettingsService,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self._billing_service = billing_service
+        self._customer_service = customer_service
+        self._staff_service = staff_service
+        self._service_catalog = service_catalog
+        self._notification_service = notification_service
+        self._settings_service = settings_service
+
+        self.setWindowTitle("New Bill")
+        self.setMinimumWidth(900)
+
+        self.selected_customer: CustomerData | None = None
+        self.all_services: list[ServiceData] = []
+        self._last_load_time = datetime.min
+
+        self.layout = QVBoxLayout(self)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        left_widget = QWidget()
+        right_widget = QWidget()
+        left_panel = QVBoxLayout(left_widget)
+        right_panel = QVBoxLayout(right_widget)
+        splitter.addWidget(left_widget)
+        splitter.addWidget(right_widget)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 1)
+        self.layout.addWidget(splitter)
+
+        progress_group = QGroupBox("Progress")
+        progress_layout = QVBoxLayout()
+        self._customer_status_label = QLabel("Customer: ?")
+        self._services_status_label = QLabel("Services: ?")
+        self._payment_status_label = QLabel("Payment: ?")
+        self._ready_status_label = QLabel("")
+        progress_layout.addWidget(self._customer_status_label)
+        progress_layout.addWidget(self._services_status_label)
+        progress_layout.addWidget(self._payment_status_label)
+        progress_layout.addWidget(self._ready_status_label)
+        progress_group.setLayout(progress_layout)
+        right_panel.addWidget(progress_group)
+
+        customer_group = QGroupBox("1. Customer")
+        customer_layout = QFormLayout()
+        self.customer_search_input = QLineEdit()
+        self.customer_search_input.setPlaceholderText("Search phone or name...")
+        self.new_customer_button = QPushButton("New Customer")
+        self.customer_search_input.returnPressed.connect(self.search_customer)
+        customer_search_layout = QHBoxLayout()
+        customer_search_layout.addWidget(self.customer_search_input)
+        customer_search_layout.addWidget(self.new_customer_button)
+        customer_layout.addRow(customer_search_layout)
+
+        self.customer_name_label = QLabel("Name: ")
+        self.customer_phone_label = QLabel("Phone: ")
+        customer_layout.addRow(self.customer_name_label)
+        customer_layout.addRow(self.customer_phone_label)
+        customer_group.setLayout(customer_layout)
+        left_panel.addWidget(customer_group)
+        self.new_customer_button.clicked.connect(self.create_new_customer)
+
+        staff_group = QGroupBox("2. Staff")
+        staff_layout = QFormLayout()
+        self.staff_combo = QComboBox()
+        staff_layout.addRow("Select Staff:", self.staff_combo)
+        staff_group.setLayout(staff_layout)
+        left_panel.addWidget(staff_group)
+
+        services_group = QGroupBox("3. Services")
+        services_layout = QVBoxLayout()
+        self.services_table = QTableWidget()
+        self.services_table.setColumnCount(5)
+        self.services_table.setHorizontalHeaderLabels(["Service", "Qty", "Price", "Total", "ID"])
+        self.services_table.setColumnHidden(4, True)
+        self.services_table.setSortingEnabled(True)
+        services_layout.addWidget(self.services_table)
+
+        service_controls_layout = QHBoxLayout()
+        self.category_combo = QComboBox()
+        self.category_combo.addItem("All Categories", None)
+        self.category_combo.currentIndexChanged.connect(self.filter_services_by_category)
+
+        self.service_search_input = QLineEdit()
+        self.service_search_input.setPlaceholderText("Search services...")
+        self.service_search_input.textChanged.connect(self.filter_services_by_search)
+
+        self.service_combo = QComboBox()
+        self.add_service_button = QPushButton("Add Service")
+        self.remove_service_button = QPushButton("Remove Service")
+
+        service_controls_layout.addWidget(QLabel("Category:"))
+        service_controls_layout.addWidget(self.category_combo)
+        service_controls_layout.addWidget(QLabel("Search:"))
+        service_controls_layout.addWidget(self.service_search_input)
+        service_controls_layout.addWidget(self.service_combo)
+        service_controls_layout.addWidget(self.add_service_button)
+        service_controls_layout.addWidget(self.remove_service_button)
+        services_layout.addLayout(service_controls_layout)
+        services_group.setLayout(services_layout)
+        left_panel.addWidget(services_group)
+
+        notes_group = QGroupBox("Customer Notes")
+        notes_layout = QVBoxLayout()
+        self.customer_notes_area = QTextEdit()
+        notes_layout.addWidget(self.customer_notes_area)
+        notes_group.setLayout(notes_layout)
+        left_panel.addWidget(notes_group)
+
+        totals_group = QGroupBox("4. Totals")
+        totals_layout = QFormLayout()
+        self.subtotal_label = QLabel("? 0.00")
+        self.discount_type_combo = QComboBox()
+        self.discount_type_combo.addItems(["Flat (?)", "Percent (%)"])
+        self.discount_input = QLineEdit("0")
+        self.tax_input = QLineEdit("0")
+        self.total_label = QLabel("? 0.00")
+        totals_layout.addRow("Subtotal:", self.subtotal_label)
+
+        discount_layout = QHBoxLayout()
+        discount_layout.addWidget(self.discount_type_combo)
+        discount_layout.addWidget(self.discount_input)
+        totals_layout.addRow("Discount:", discount_layout)
+
+        totals_layout.addRow("Tax (%):", self.tax_input)
+        totals_layout.addRow("Total:", self.total_label)
+        totals_group.setLayout(totals_layout)
+        right_panel.addWidget(totals_group)
+
+        payment_group = QGroupBox("5. Payment")
+        payment_layout = QFormLayout()
+        self.payment_method_combo = QComboBox()
+        self.payment_method_combo.addItems(["Cash", "UPI", "Card", "Other"])
+        payment_layout.addRow("Payment Method:", self.payment_method_combo)
+
+        self.transaction_id_input = QLineEdit()
+        self.transaction_id_input.setPlaceholderText("Transaction ID (UPI/Card)")
+        payment_layout.addRow("Transaction ID:", self.transaction_id_input)
+
+        self.payment_status_combo = QComboBox()
+        self.payment_status_combo.addItems(["Paid", "Pending"])
+        payment_layout.addRow("Payment Status:", self.payment_status_combo)
+
+        payment_group.setLayout(payment_layout)
+        right_panel.addWidget(payment_group)
+
+        action_button_layout = QHBoxLayout()
+        self.preview_button = QPushButton("Preview")
+        self.save_bill_button = QPushButton("Save Bill")
+        self.save_and_send_button = QPushButton("Save, PDF & Send")
+        action_button_layout.addWidget(self.preview_button)
+        action_button_layout.addWidget(self.save_bill_button)
+        action_button_layout.addWidget(self.save_and_send_button)
+        self.layout.addLayout(action_button_layout)
+
+        self.load_staff()
+        self.load_services()
+        self._load_default_tax()
+        self._update_transaction_visibility()
+        self._update_progress_status()
+
+        self.add_service_button.clicked.connect(self.add_service_to_bill)
+        self.remove_service_button.clicked.connect(self.remove_service_from_bill)
+        self.discount_input.textChanged.connect(self.update_totals)
+        self.tax_input.textChanged.connect(self.update_totals)
+        self.services_table.cellChanged.connect(self.update_totals_from_table)
+        self.save_bill_button.clicked.connect(self.save_bill)
+        self.save_and_send_button.clicked.connect(self.save_bill_and_send)
+        self.preview_button.clicked.connect(self.preview_bill)
+        self.payment_method_combo.currentTextChanged.connect(self._update_transaction_visibility)
+        self.payment_method_combo.currentTextChanged.connect(self._update_progress_status)
+        self.payment_status_combo.currentTextChanged.connect(self._update_progress_status)
+
+    def load_staff(self) -> None:
+        self.staff_combo.clear()
+        staff_list = self._staff_service.list_active_staff()
+        for staff in staff_list:
+            self.staff_combo.addItem(staff.name, staff.id)
+
+    def load_services(self) -> None:
+        self.category_combo.blockSignals(True)
+        self.service_combo.blockSignals(True)
+        try:
+            self.all_services = self._service_catalog.list_active()
+            self._last_load_time = datetime.now()
+            categories = sorted({s.category for s in self.all_services if s.category})
+            self.category_combo.clear()
+            self.category_combo.addItem("All Categories", None)
+            for category in categories:
+                self.category_combo.addItem(category, category)
+            self.populate_service_combo(self.all_services)
+        finally:
+            self.category_combo.blockSignals(False)
+            self.service_combo.blockSignals(False)
+
+    def populate_service_combo(self, services: list[ServiceData]) -> None:
+        self.service_combo.blockSignals(True)
+        try:
+            while self.service_combo.count() > 0:
+                self.service_combo.removeItem(0)
+            for service in services:
+                display_text = service.display_name or service.name or ""
+                price = service.price if service.price is not None else Decimal("0")
+                self.service_combo.addItem(f"{display_text} - ?{price}", service.id)
+        finally:
+            self.service_combo.blockSignals(False)
+
+    def filter_services_by_category(self) -> None:
+        selected_category = self.category_combo.currentData()
+        search_text = (self.service_search_input.text() or "").lower()
+        filtered = self.all_services
+
+        if selected_category:
+            filtered = [s for s in filtered if s.category == selected_category]
+        if search_text:
+            filtered = [
+                s
+                for s in filtered
+                if (
+                    search_text in (s.display_name or s.name or "").lower()
+                    or search_text in (s.name or "").lower()
+                    or (s.notes and search_text in s.notes.lower())
+                )
+            ]
+        self.populate_service_combo(filtered)
+
+    def filter_services_by_search(self) -> None:
+        self.filter_services_by_category()
+
+    def search_customer(self) -> None:
+        search_term = self.customer_search_input.text().strip()
+        if not search_term:
+            return
+        customers = self._customer_service.search_customers(search_term)
+        if not customers:
+            QMessageBox.information(self, "Customer Not Found", "No customer found with that name or phone number.")
+            self.selected_customer = None
+            return
+
+        if len(customers) == 1:
+            selected = customers[0]
+        else:
+            dialog = CustomerSelectionDialog(customers, self)
+            if not dialog.exec() or not dialog.selected_customer:
+                return
+            selected = dialog.selected_customer
+
+        self._apply_selected_customer(selected)
+
+    def create_new_customer(self) -> None:
+        dialog = CustomerDialog(self._customer_service, self)
+        if dialog.exec():
+            self.search_customer()
+
+    def _apply_selected_customer(self, customer: CustomerData) -> None:
+        self.selected_customer = customer
+        self.customer_name_label.setText(f"Name: {customer.name}")
+        self.customer_phone_label.setText(f"Phone: {customer.phone}")
+        self.customer_notes_area.setPlainText(customer.notes or "")
+        self._update_progress_status()
+
+    def _ensure_fresh_services(self) -> None:
+        if (datetime.now() - self._last_load_time).total_seconds() > 300:
+            self.load_services()
+
+    def add_service_to_bill(self) -> None:
+        self._ensure_fresh_services()
+        service_id = self.service_combo.currentData()
+        service = next((s for s in self.all_services if s.id == service_id), None)
+        if not service:
+            QMessageBox.warning(self, "Error", "Service not found.")
+            return
+
+        self.services_table.blockSignals(True)
+        try:
+            row_position = self.services_table.rowCount()
+            self.services_table.insertRow(row_position)
+            self.services_table.setItem(row_position, 0, QTableWidgetItem(service.name or ""))
+            self.services_table.setItem(row_position, 1, QTableWidgetItem("1"))
+            price = service.price if service.price is not None else Decimal("0")
+            self.services_table.setItem(row_position, 2, QTableWidgetItem(str(price)))
+            self.services_table.setItem(row_position, 3, QTableWidgetItem(str(price)))
+            self.services_table.setItem(row_position, 4, QTableWidgetItem(str(service.id)))
+        finally:
+            self.services_table.blockSignals(False)
+        self.update_totals()
+        self._update_progress_status()
+
+    def remove_service_from_bill(self) -> None:
+        selected_row = self.services_table.currentRow()
+        if selected_row >= 0:
+            self.services_table.removeRow(selected_row)
+            self.update_totals()
+            self._update_progress_status()
+
+    def update_totals_from_table(self, row: int, column: int) -> None:
+        if column in (1, 2):
+            try:
+                qty = int(self.services_table.item(row, 1).text())
+                price = Decimal(self.services_table.item(row, 2).text())
+                line_total = qty * price
+                self.services_table.item(row, 3).setText(f"{line_total:.2f}")
+            except (ValueError, TypeError):
+                pass
+            self.update_totals()
+            self._update_progress_status()
+
+    def update_totals(self) -> None:
+        subtotal = Decimal("0")
+        for row in range(self.services_table.rowCount()):
+            try:
+                subtotal += Decimal(self.services_table.item(row, 3).text())
+            except (ValueError, TypeError):
+                pass
+
+        self.subtotal_label.setText(f"? {subtotal:.2f}")
+
+        try:
+            discount_value = Decimal(self.discount_input.text())
+        except Exception:
+            discount_value = Decimal("0")
+
+        discount_amount = Decimal("0")
+        if self.discount_type_combo.currentIndex() == 0:
+            discount_amount = min(discount_value, subtotal)
+            self.discount_input.setStyleSheet("" if discount_value <= subtotal else "background-color: #ffcccc;")
+        else:
+            capped_percent = min(discount_value, Decimal("100"))
+            discount_amount = subtotal * (capped_percent / Decimal("100"))
+            self.discount_input.setStyleSheet("" if discount_value <= Decimal("100") else "background-color: #ffcccc;")
+
+        try:
+            tax_percent = Decimal(self.tax_input.text())
+        except Exception:
+            tax_percent = Decimal("0")
+
+        total = subtotal - discount_amount
+        tax_amount = total * (tax_percent / Decimal("100"))
+        total += tax_amount
+
+        self.total_label.setText(f"? {total:.2f}")
+        self._update_progress_status()
+
+    def _collect_items_from_table(self) -> list[BillItemInput]:
+        items = []
+        for row in range(self.services_table.rowCount()):
+            items.append(
+                BillItemInput(
+                    service_id=int(self.services_table.item(row, 4).text()),
+                    quantity=int(self.services_table.item(row, 1).text()),
+                    unit_price=Decimal(self.services_table.item(row, 2).text()),
+                )
+            )
+        return items
+
+    def save_bill(self, and_send: bool = False) -> None:
+        if not self.selected_customer:
+            QMessageBox.warning(self, "No Customer", "Please select a customer.")
+            return
+        if self.staff_combo.currentData() is None:
+            QMessageBox.warning(self, "No Staff", "Please select a staff member.")
+            return
+        if self.services_table.rowCount() == 0:
+            QMessageBox.warning(self, "No Services", "Please add at least one service.")
+            return
+
+        try:
+            items = self._collect_items_from_table()
+            options = BillOptions(
+                discount_type="flat" if self.discount_type_combo.currentIndex() == 0 else "percent",
+                discount_value=Decimal(self.discount_input.text() or "0"),
+                tax_percent=Decimal(self.tax_input.text() or "0"),
+                payment_method=self.payment_method_combo.currentText(),
+                transaction_id=self.transaction_id_input.text().strip() or None,
+                payment_status=self.payment_status_combo.currentText(),
+            )
+            bill = self._billing_service.create_bill(
+                customer_id=self.selected_customer.id,
+                staff_id=self.staff_combo.currentData(),
+                items=items,
+                options=options,
+            )
+        except ValidationError as exc:
+            QMessageBox.warning(self, "Validation Error", str(exc))
+            return
+
+        QMessageBox.information(self, "Bill Saved", f"Bill #{bill.bill_number} has been saved.")
+
+        if and_send:
+            self.generate_and_send(bill)
+
+        self.accept()
+
+    def save_bill_and_send(self) -> None:
+        self.save_bill(and_send=True)
+
+    def generate_and_send(self, bill) -> None:
+        try:
+            pdf_path = self._billing_service.generate_receipt(bill.id)
+            QMessageBox.information(self, "PDF Generated", f"Receipt saved to {pdf_path}")
+            result = self._notification_service.send_whatsapp_receipt(
+                phone_number=self.selected_customer.phone,
+                customer_name=self.selected_customer.name,
+                total=f"{bill.total:.2f}",
+                attachment_path=pdf_path,
+            )
+            if result.success:
+                self._billing_service.update_whatsapp_status(bill.id, "Sent")
+                QMessageBox.information(
+                    self,
+                    "WhatsApp Sent",
+                    f"Receipt sent successfully to {self.selected_customer.phone}",
+                )
+            else:
+                self._billing_service.update_whatsapp_status(bill.id, "Failed", result.error_message)
+                QMessageBox.critical(
+                    self,
+                    "WhatsApp Send Failed",
+                    f"Could not send receipt to {self.selected_customer.phone}.\n\n"
+                    f"Error: {result.error_message}\n\n"
+                    "You can retry from Bill History.",
+                )
+        except Exception as exc:
+            self._billing_service.update_whatsapp_status(bill.id, "Error", str(exc))
+            QMessageBox.critical(self, "Error", f"An error occurred: {exc}")
+
+    def _load_default_tax(self) -> None:
+        default_tax = self._settings_service.get_setting("default_tax_percent", "0")
+        self.tax_input.setText(default_tax or "0")
+
+    def _update_transaction_visibility(self) -> None:
+        method = self.payment_method_combo.currentText()
+        self.transaction_id_input.setVisible(method not in {"Cash"})
+
+    def preview_bill(self) -> None:
+        if not self.selected_customer:
+            QMessageBox.warning(self, "No Customer", "Please select a customer.")
+            return
+        if self.services_table.rowCount() == 0:
+            QMessageBox.warning(self, "No Services", "Please add at least one service.")
+            return
+        pdf_path = self._generate_preview_pdf()
+        if not pdf_path:
+            return
+        try:
+            os.startfile(pdf_path)
+        except Exception:
+            QMessageBox.information(self, "Preview Generated", f"Preview saved at:\n{pdf_path}")
+
+    def _generate_preview_pdf(self) -> str | None:
+        try:
+            _, path = tempfile.mkstemp(prefix="bill_preview_", suffix=".pdf")
+            c = canvas.Canvas(path, pagesize=letter)
+            width, height = letter
+            y = height - 50
+            c.setFont("Helvetica-Bold", 14)
+            c.drawString(50, y, "Bill Preview")
+            y -= 30
+            c.setFont("Helvetica", 10)
+            c.drawString(50, y, f"Customer: {self.selected_customer.name}")
+            y -= 15
+            c.drawString(50, y, f"Phone: {self.selected_customer.phone}")
+            y -= 25
+            c.setFont("Helvetica-Bold", 10)
+            c.drawString(50, y, "Service")
+            c.drawString(300, y, "Qty")
+            c.drawString(350, y, "Price")
+            c.drawString(420, y, "Total")
+            y -= 15
+            c.setFont("Helvetica", 10)
+            for row in range(self.services_table.rowCount()):
+                service_name = self.services_table.item(row, 0).text()
+                qty = self.services_table.item(row, 1).text()
+                price = self.services_table.item(row, 2).text()
+                total = self.services_table.item(row, 3).text()
+                c.drawString(50, y, service_name)
+                c.drawString(300, y, qty)
+                c.drawString(350, y, price)
+                c.drawString(420, y, total)
+                y -= 15
+                if y < 80:
+                    c.showPage()
+                    y = height - 50
+            y -= 10
+            c.setFont("Helvetica-Bold", 10)
+            c.drawString(50, y, f"Subtotal: {self.subtotal_label.text()}")
+            y -= 15
+            c.drawString(50, y, f"Total: {self.total_label.text()}")
+            c.save()
+            return path
+        except Exception as exc:
+            QMessageBox.warning(self, "Preview Failed", f"Failed to generate preview: {exc}")
+            return None
+
+    def _update_progress_status(self) -> None:
+        customer_done = self.selected_customer is not None
+        services_done = self.services_table.rowCount() > 0
+        payment_done = bool(self.payment_method_combo.currentText())
+
+        self._customer_status_label.setText(f"Customer: {'?' if customer_done else '?'}")
+        self._services_status_label.setText(f"Services: {'?' if services_done else '?'}")
+        self._payment_status_label.setText(f"Payment: {'?' if payment_done else '?'}")
+
+        if customer_done and services_done and payment_done:
+            self._ready_status_label.setText("Ready to Save")
+        else:
+            self._ready_status_label.setText("")
