@@ -4,23 +4,32 @@ on:
     branches: [ master ]
   pull_request:
     branches: [ master ]
+
 jobs:
   tests:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install dependencies
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon0 libxcb-xinerama0 libxcb-cursor0
+
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install pytest
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
       - name: Run tests
         env:
           PYTHONPATH: ${{ github.workspace }}
-        run: |
-          if [ -d tests ]; then pytest -q; else echo "No tests directory"; fi
+          QT_QPA_PLATFORM: offscreen
+        run: pytest -q --tb=short
