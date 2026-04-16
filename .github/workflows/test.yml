@@ -20,5 +20,7 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install pytest
       - name: Run tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
-          if [ -d tests ]; then pytest -q || pytest -q; else echo "No tests directory"; fi
+          if [ -d tests ]; then pytest -q; else echo "No tests directory"; fi
