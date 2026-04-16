@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.0] - 2026-04-16
+
+### Added
+- Centralized UI theme module (`app/ui/theme.py`) and startup stylesheet application.
+- Shared UI helper utilities (`format_money`, `open_pdf`, `confirm_action`, `send_whatsapp_receipt`).
+- SQL wildcard escaping utility for safe repository `LIKE/ILIKE` search filters.
+- SQL-aggregated dashboard daily stats query in `BillRepository`.
+- Shared `bill_to_dto` converter in `app/dto/converters.py`.
+
+### Changed
+- Replaced dialog-based page navigation with embedded stacked `QWidget` pages in `MainWindow`.
+- Rebranded key settings and labels from salon-specific terms to business terms with compatibility migration.
+- Made currency symbol configurable across UI, PDF, and WhatsApp message templates.
+- Added HTTP timeouts to WhatsApp API calls.
+- Added SQLite `check_same_thread=False` for thread-compatible DB access.
+- Added DB indexes for customer and bill hot columns.
+- Switched logging to rotating file handlers and lazy logger initialization.
+- Aligned bill preview generation with the same PDF pipeline as final receipts.
+- Added input validators and service-layer phone normalization/validation.
+- Added configurable bill number prefix format (`<PREFIX>-<YEAR>-<SEQ>`).
+- Secured cloud token handling with keyring-first storage and safe fallback behavior.
+
+### Fixed
+- Address/path resolution reliability by switching core runtime paths to absolute project-root-based values.
+- Duplicate WhatsApp and PDF-open logic across views by consolidating shared helper usage.
+
 ## [2.0.0] - 2026-02-17
 
 ### Added

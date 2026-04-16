@@ -20,6 +20,7 @@ from app.services import (
 )
 from app.services.restore_service import RestoreService
 from app.ui.main_window import MainWindow
+from app.ui.theme import apply_theme
 from app.infrastructure.logging import logger
 
 def main():
@@ -41,6 +42,7 @@ def main():
             logger.error(f"Database migration failed: {migration_error}")
 
         app = QApplication(sys.argv)
+        apply_theme(app)
 
         session_factory = db_session
         bill_repo = BillRepository(session_factory)

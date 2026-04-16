@@ -84,6 +84,8 @@ class _StubStaffRepo:
 
 class _StubSettingsService:
     def get_setting(self, key: str, default: str | None = None) -> str | None:
+        if key == "bill_number_prefix":
+            return "INV"
         return default
 
 
@@ -108,6 +110,25 @@ class _StubBillQueryRepo:
 
     def find_recent(self, limit=5):
         return list(self._recent)
+
+    def get_daily_stats(self, target_date):
+        paid_total = sum(
+            (Decimal(b.total or 0) for b in self._bills if (b.payment_status or "") == "Paid"),
+            Decimal("0"),
+        )
+        pending_total = sum(
+            (Decimal(b.total or 0) for b in self._bills if (b.payment_status or "") == "Pending"),
+            Decimal("0"),
+        )
+        pending_count = sum(1 for b in self._bills if (b.payment_status or "") == "Pending")
+        unique_customers = len({b.customer_id for b in self._bills if b.customer_id})
+        return {
+            "total_bills": len(self._bills),
+            "paid_total": paid_total,
+            "pending_total": pending_total,
+            "pending_count": pending_count,
+            "unique_customers": unique_customers,
+        }
 
 
 class _StubBill:
@@ -203,7 +224,7 @@ def test_create_bill_sets_bill_number() -> None:
     bill = service.create_bill(customer_id=1, staff_id=1, items=items, options=options)
 
     assert bill.id == 1
-    assert bill.bill_number == "1"
+    assert bill.bill_number == f"INV-{bill.bill_datetime.year}-0001"
     assert bill.total == Decimal("94.5")
 
 

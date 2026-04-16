@@ -13,6 +13,7 @@ from app.repositories.customer_repository import CustomerRepository
 from app.repositories.service_repository import ServiceRepository
 from app.repositories.settings_repository import SettingsRepository
 from app.repositories.staff_repository import StaffRepository
+from app.repositories.utils import escape_like
 
 
 def test_base_repository_crud(temp_db) -> None:
@@ -139,6 +140,25 @@ def test_customer_repository_methods(temp_db) -> None:
     assert repo.update_last_visit(9999, datetime.utcnow()) is False
 
 
+def test_customer_repository_search_escapes_like_wildcards(temp_db) -> None:
+    with infra_db.db_session() as db:
+        db.add(Customer(name="A%lex", phone="12_3"))
+        db.flush()
+
+    repo = CustomerRepository(infra_db.db_session)
+    by_percent = list(repo.search("%"))
+    by_underscore = list(repo.search("_"))
+
+    assert len(by_percent) == 1
+    assert len(by_underscore) == 1
+
+
+def test_escape_like_escapes_special_chars() -> None:
+    escaped = escape_like(r"a%b_c\\")
+
+    assert escaped == r"a\%b\_c\\\\"
+
+
 def test_service_repository_methods(temp_db) -> None:
     with infra_db.db_session() as db:
         service = Service(
@@ -168,6 +188,54 @@ def test_service_repository_methods(temp_db) -> None:
     assert repo.delete_all() >= 1
     assert repo.upsert_from_import("Display", "Name", None, None, Decimal("5"), None) is False
     assert repo.upsert_from_import("Display", "Name", None, None, Decimal("6"), None) is True
+
+
+def test_bill_repository_get_daily_stats(temp_db) -> None:
+    with infra_db.db_session() as db:
+        customer = Customer(name="Alex", phone="123")
+        staff = Staff(name="Stylist", phone="", role="", active=True)
+        db.add_all([customer, staff])
+        db.flush()
+
+        db.add(
+            Bill(
+                bill_number="B1",
+                customer_id=customer.id,
+                staff_id=staff.id,
+                bill_datetime=datetime.utcnow(),
+                subtotal=Decimal("10"),
+                discount_amount=Decimal("0"),
+                discount_type="none",
+                tax_amount=Decimal("0"),
+                tax_percent=Decimal("0"),
+                total=Decimal("10"),
+                payment_method="Cash",
+                payment_status="Paid",
+            )
+        )
+        db.add(
+            Bill(
+                bill_number="B2",
+                customer_id=customer.id,
+                staff_id=staff.id,
+                bill_datetime=datetime.utcnow(),
+                subtotal=Decimal("20"),
+                discount_amount=Decimal("0"),
+                discount_type="none",
+                tax_amount=Decimal("0"),
+                tax_percent=Decimal("0"),
+                total=Decimal("20"),
+                payment_method="Cash",
+                payment_status="Pending",
+            )
+        )
+
+    repo = BillRepository(infra_db.db_session)
+    stats = repo.get_daily_stats(datetime.utcnow().date())
+
+    assert stats["total_bills"] >= 2
+    assert stats["paid_total"] >= Decimal("10")
+    assert stats["pending_total"] >= Decimal("20")
 
 
 def test_staff_repository_methods(temp_db) -> None:

@@ -113,6 +113,22 @@ def test_create_customer_success_returns_data() -> None:
     assert result.notes == "Notes"
 
 
+def test_create_customer_normalizes_phone() -> None:
+    repo = _StubCustomerRepo()
+    service = CustomerService(repo, _StubBillRepo(bills=[]))
+
+    result = service.create_customer("Alex", " +91 999-888-7777 ", None)
+
+    assert result.phone == "+919998887777"
+
+
+def test_create_customer_invalid_phone_raises_validation_error() -> None:
+    service = CustomerService(_StubCustomerRepo(), _StubBillRepo(bills=[]))
+
+    with pytest.raises(ValidationError):
+        service.create_customer("Alex", "ABC", None)
+
+
 def test_get_customer_success_returns_data() -> None:
     customer = Customer(id=1, name="Alex", phone="999")
     service = CustomerService(_StubCustomerRepo(customer=customer), _StubBillRepo(bills=[]))
@@ -139,6 +155,19 @@ def test_update_customer_success_returns_data() -> None:
     )
 
     assert result.name == "New"
+
+
+def test_update_customer_normalizes_phone() -> None:
+    customer = Customer(id=1, name="Alex", phone="999")
+    repo = _StubCustomerRepo(customer=customer)
+    service = CustomerService(repo, _StubBillRepo(bills=[]))
+
+    result = service.update_customer(
+        1,
+        CustomerData(id=1, name="New", phone="(999) 123-4567", notes=None, last_visit_at=None),
+    )
+
+    assert result.phone == "9991234567"
 
 
 def test_search_customers_empty_returns_list() -> None:

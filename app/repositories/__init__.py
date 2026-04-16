@@ -6,6 +6,7 @@ from .customer_repository import CustomerRepository
 from .service_repository import ServiceRepository
 from .settings_repository import SettingsRepository
 from .staff_repository import StaffRepository
+from .utils import escape_like
 
 __all__ = [
     "BaseRepository",
@@ -14,4 +15,5 @@ __all__ = [
     "ServiceRepository",
     "SettingsRepository",
     "StaffRepository",
+    "escape_like",
 ]

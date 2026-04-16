@@ -8,7 +8,6 @@ from PyQt6.QtCore import QDate
 from PyQt6.QtWidgets import (
     QComboBox,
     QDateEdit,
-    QDialog,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -16,14 +15,15 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QVBoxLayout,
+    QWidget,
 )
 
 from ..services.customer_service import CustomerService
 from ..services.report_service import ReportService
 
 
-class ExportView(QDialog):
-    """Dialog for exporting data."""
+class ExportView(QWidget):
+    """Page for exporting data."""
 
     def __init__(
         self,
@@ -74,11 +74,22 @@ class ExportView(QDialog):
         buttons = QHBoxLayout()
         export_btn = QPushButton("Export")
         export_btn.clicked.connect(self.do_export)
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(self.reject)
+        cancel_btn = QPushButton("Reset")
+        cancel_btn.clicked.connect(self._reset_filters)
         buttons.addWidget(export_btn)
         buttons.addWidget(cancel_btn)
         layout.addLayout(buttons)
+
+    def refresh(self) -> None:
+        self.customer_combo.clear()
+        self.customer_combo.addItem("All Customers", None)
+        self._load_customers()
+
+    def _reset_filters(self) -> None:
+        self.start_date.setDate(QDate.currentDate().addMonths(-1))
+        self.end_date.setDate(QDate.currentDate())
+        self.customer_combo.setCurrentIndex(0)
+        self._format_combo.setCurrentIndex(0)
 
     def _load_customers(self) -> None:
         customers = self._customer_service.search_customers("")
@@ -125,6 +136,6 @@ class ExportView(QDialog):
 
         if success:
             QMessageBox.information(self, "Export Complete", f"Data exported successfully to:\n{file_path}")
-            self.accept()
+            self._reset_filters()
         else:
             QMessageBox.critical(self, "Export Failed", "Failed to export data. Check logs for details.")

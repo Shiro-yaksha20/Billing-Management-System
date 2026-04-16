@@ -4,23 +4,20 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-import os
-import tempfile
-
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QDoubleValidator, QIntValidator, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QComboBox,
-    QDialog,
     QFormLayout,
     QGroupBox,
+    QHeaderView,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -31,20 +28,23 @@ from PyQt6.QtWidgets import (
 
 from ..dto.bill_dto import BillItemInput, BillOptions
 from ..dto.customer_dto import CustomerData
+from ..dto.receipt_dto import ReceiptData, ReceiptItemData
 from ..dto.service_dto import ServiceData
 from ..exceptions.validation_errors import ValidationError
+from ..infrastructure.pdf_generator import generate_receipt_pdf
 from ..services.billing_service import BillingService
 from ..services.customer_service import CustomerService
 from ..services.notification_service import NotificationService
 from ..services.service_catalog import ServiceCatalog
 from ..services.settings_service import SettingsService
 from ..services.staff_service import StaffService
+from .helpers import confirm_action, format_money, open_pdf, send_whatsapp_receipt
 from .dialogs.customer_dialog import CustomerDialog
 from .dialogs.customer_selection_dialog import CustomerSelectionDialog
 
 
-class BillingView(QDialog):
-    """Dialog for creating a new bill."""
+class BillingView(QWidget):
+    """Page for creating a new bill."""
 
     def __init__(
         self,
@@ -63,6 +63,7 @@ class BillingView(QDialog):
         self._service_catalog = service_catalog
         self._notification_service = notification_service
         self._settings_service = settings_service
+        self._currency_symbol = self._settings_service.get_setting("currency_symbol", "?") or "?"
 
         self.setWindowTitle("New Bill")
         self.setMinimumWidth(900)
@@ -71,7 +72,7 @@ class BillingView(QDialog):
         self.all_services: list[ServiceData] = []
         self._last_load_time = datetime.min
 
-        self.layout = QVBoxLayout(self)
+        self._main_layout = QVBoxLayout(self)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         left_widget = QWidget()
@@ -82,7 +83,14 @@ class BillingView(QDialog):
         splitter.addWidget(right_widget)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
-        self.layout.addWidget(splitter)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.addWidget(splitter)
+        scroll.setWidget(scroll_content)
+        self._main_layout.addWidget(scroll)
 
         progress_group = QGroupBox("Progress")
         progress_layout = QVBoxLayout()
@@ -130,6 +138,10 @@ class BillingView(QDialog):
         self.services_table.setHorizontalHeaderLabels(["Service", "Qty", "Price", "Total", "ID"])
         self.services_table.setColumnHidden(4, True)
         self.services_table.setSortingEnabled(True)
+        self.services_table.horizontalHeader().setStretchLastSection(True)
+        self.services_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.services_table.setAlternatingRowColors(True)
+        self.services_table.verticalHeader().setVisible(False)
         services_layout.addWidget(self.services_table)
 
         service_controls_layout = QHBoxLayout()
@@ -165,12 +177,14 @@ class BillingView(QDialog):
 
         totals_group = QGroupBox("4. Totals")
         totals_layout = QFormLayout()
-        self.subtotal_label = QLabel("? 0.00")
+        self.subtotal_label = QLabel(format_money(Decimal("0"), self._currency_symbol))
         self.discount_type_combo = QComboBox()
-        self.discount_type_combo.addItems(["Flat (?)", "Percent (%)"])
+        self.discount_type_combo.addItems([f"Flat ({self._currency_symbol})", "Percent (%)"])
         self.discount_input = QLineEdit("0")
+        self.discount_input.setValidator(QDoubleValidator(0.0, 9999999.99, 2, self))
         self.tax_input = QLineEdit("0")
-        self.total_label = QLabel("? 0.00")
+        self.tax_input.setValidator(QDoubleValidator(0.0, 100.0, 2, self))
+        self.total_label = QLabel(format_money(Decimal("0"), self._currency_symbol))
         totals_layout.addRow("Subtotal:", self.subtotal_label)
 
         discount_layout = QHBoxLayout()
@@ -207,7 +221,7 @@ class BillingView(QDialog):
         action_button_layout.addWidget(self.preview_button)
         action_button_layout.addWidget(self.save_bill_button)
         action_button_layout.addWidget(self.save_and_send_button)
-        self.layout.addLayout(action_button_layout)
+        self._main_layout.addLayout(action_button_layout)
 
         self.load_staff()
         self.load_services()
@@ -226,6 +240,17 @@ class BillingView(QDialog):
         self.payment_method_combo.currentTextChanged.connect(self._update_transaction_visibility)
         self.payment_method_combo.currentTextChanged.connect(self._update_progress_status)
         self.payment_status_combo.currentTextChanged.connect(self._update_progress_status)
+
+        self._shortcuts = [
+            QShortcut(QKeySequence("Ctrl+S"), self, self.save_bill),
+            QShortcut(QKeySequence("Ctrl+P"), self, self.preview_bill),
+        ]
+
+    def refresh(self) -> None:
+        self.load_staff()
+        self.load_services()
+        self._load_default_tax()
+        self._update_progress_status()
 
     def load_staff(self) -> None:
         self.staff_combo.clear()
@@ -257,7 +282,10 @@ class BillingView(QDialog):
             for service in services:
                 display_text = service.display_name or service.name or ""
                 price = service.price if service.price is not None else Decimal("0")
-                self.service_combo.addItem(f"{display_text} - ?{price}", service.id)
+                self.service_combo.addItem(
+                    f"{display_text} - {format_money(price, self._currency_symbol)}",
+                    service.id,
+                )
         finally:
             self.service_combo.blockSignals(False)
 
@@ -332,7 +360,9 @@ class BillingView(QDialog):
             row_position = self.services_table.rowCount()
             self.services_table.insertRow(row_position)
             self.services_table.setItem(row_position, 0, QTableWidgetItem(service.name or ""))
-            self.services_table.setItem(row_position, 1, QTableWidgetItem("1"))
+            qty_item = QTableWidgetItem("1")
+            qty_item.setData(Qt.ItemDataRole.UserRole, QIntValidator(1, 999, self))
+            self.services_table.setItem(row_position, 1, qty_item)
             price = service.price if service.price is not None else Decimal("0")
             self.services_table.setItem(row_position, 2, QTableWidgetItem(str(price)))
             self.services_table.setItem(row_position, 3, QTableWidgetItem(str(price)))
@@ -352,6 +382,10 @@ class BillingView(QDialog):
     def update_totals_from_table(self, row: int, column: int) -> None:
         if column in (1, 2):
             try:
+                if column == 1:
+                    validator = self.services_table.item(row, 1).data(Qt.ItemDataRole.UserRole)
+                    if validator and not validator.validate(self.services_table.item(row, 1).text(), 0)[0]:
+                        self.services_table.item(row, 1).setText("1")
                 qty = int(self.services_table.item(row, 1).text())
                 price = Decimal(self.services_table.item(row, 2).text())
                 line_total = qty * price
@@ -369,7 +403,7 @@ class BillingView(QDialog):
             except (ValueError, TypeError):
                 pass
 
-        self.subtotal_label.setText(f"? {subtotal:.2f}")
+        self.subtotal_label.setText(format_money(subtotal, self._currency_symbol))
 
         try:
             discount_value = Decimal(self.discount_input.text())
@@ -394,7 +428,7 @@ class BillingView(QDialog):
         tax_amount = total * (tax_percent / Decimal("100"))
         total += tax_amount
 
-        self.total_label.setText(f"? {total:.2f}")
+        self.total_label.setText(format_money(total, self._currency_symbol))
         self._update_progress_status()
 
     def _collect_items_from_table(self) -> list[BillItemInput]:
@@ -418,6 +452,13 @@ class BillingView(QDialog):
             return
         if self.services_table.rowCount() == 0:
             QMessageBox.warning(self, "No Services", "Please add at least one service.")
+            return
+
+        if not confirm_action(
+            self,
+            "Save Bill",
+            f"Create bill for {self.total_label.text()}?",
+        ):
             return
 
         try:
@@ -445,7 +486,16 @@ class BillingView(QDialog):
         if and_send:
             self.generate_and_send(bill)
 
-        self.accept()
+        self._clear_form()
+
+    def _clear_form(self) -> None:
+        self.services_table.setRowCount(0)
+        self.discount_input.setText("0")
+        self.transaction_id_input.clear()
+        self.payment_method_combo.setCurrentText("Cash")
+        self.payment_status_combo.setCurrentText("Paid")
+        self.update_totals()
+        self._update_progress_status()
 
     def save_bill_and_send(self) -> None:
         self.save_bill(and_send=True)
@@ -454,28 +504,14 @@ class BillingView(QDialog):
         try:
             pdf_path = self._billing_service.generate_receipt(bill.id)
             QMessageBox.information(self, "PDF Generated", f"Receipt saved to {pdf_path}")
-            result = self._notification_service.send_whatsapp_receipt(
-                phone_number=self.selected_customer.phone,
-                customer_name=self.selected_customer.name,
-                total=f"{bill.total:.2f}",
-                attachment_path=pdf_path,
+            send_whatsapp_receipt(
+                bill=bill,
+                billing_service=self._billing_service,
+                notification_service=self._notification_service,
+                parent=self,
+                customer_phone=self.selected_customer.phone if self.selected_customer else None,
+                customer_name=self.selected_customer.name if self.selected_customer else None,
             )
-            if result.success:
-                self._billing_service.update_whatsapp_status(bill.id, "Sent")
-                QMessageBox.information(
-                    self,
-                    "WhatsApp Sent",
-                    f"Receipt sent successfully to {self.selected_customer.phone}",
-                )
-            else:
-                self._billing_service.update_whatsapp_status(bill.id, "Failed", result.error_message)
-                QMessageBox.critical(
-                    self,
-                    "WhatsApp Send Failed",
-                    f"Could not send receipt to {self.selected_customer.phone}.\n\n"
-                    f"Error: {result.error_message}\n\n"
-                    "You can retry from Bill History.",
-                )
         except Exception as exc:
             self._billing_service.update_whatsapp_status(bill.id, "Error", str(exc))
             QMessageBox.critical(self, "Error", f"An error occurred: {exc}")
@@ -498,52 +534,74 @@ class BillingView(QDialog):
         pdf_path = self._generate_preview_pdf()
         if not pdf_path:
             return
-        try:
-            os.startfile(pdf_path)
-        except Exception:
-            QMessageBox.information(self, "Preview Generated", f"Preview saved at:\n{pdf_path}")
+        open_pdf(pdf_path, self, title="Preview Generated")
 
     def _generate_preview_pdf(self) -> str | None:
         try:
-            _, path = tempfile.mkstemp(prefix="bill_preview_", suffix=".pdf")
-            c = canvas.Canvas(path, pagesize=letter)
-            width, height = letter
-            y = height - 50
-            c.setFont("Helvetica-Bold", 14)
-            c.drawString(50, y, "Bill Preview")
-            y -= 30
-            c.setFont("Helvetica", 10)
-            c.drawString(50, y, f"Customer: {self.selected_customer.name}")
-            y -= 15
-            c.drawString(50, y, f"Phone: {self.selected_customer.phone}")
-            y -= 25
-            c.setFont("Helvetica-Bold", 10)
-            c.drawString(50, y, "Service")
-            c.drawString(300, y, "Qty")
-            c.drawString(350, y, "Price")
-            c.drawString(420, y, "Total")
-            y -= 15
-            c.setFont("Helvetica", 10)
+            receipt_items: list[ReceiptItemData] = []
+            subtotal = Decimal("0")
+
             for row in range(self.services_table.rowCount()):
-                service_name = self.services_table.item(row, 0).text()
-                qty = self.services_table.item(row, 1).text()
-                price = self.services_table.item(row, 2).text()
-                total = self.services_table.item(row, 3).text()
-                c.drawString(50, y, service_name)
-                c.drawString(300, y, qty)
-                c.drawString(350, y, price)
-                c.drawString(420, y, total)
-                y -= 15
-                if y < 80:
-                    c.showPage()
-                    y = height - 50
-            y -= 10
-            c.setFont("Helvetica-Bold", 10)
-            c.drawString(50, y, f"Subtotal: {self.subtotal_label.text()}")
-            y -= 15
-            c.drawString(50, y, f"Total: {self.total_label.text()}")
-            c.save()
-            return path
+                service_name_item = self.services_table.item(row, 0)
+                qty_item = self.services_table.item(row, 1)
+                unit_price_item = self.services_table.item(row, 2)
+
+                if not service_name_item or not qty_item or not unit_price_item:
+                    continue
+
+                quantity = int(qty_item.text())
+                unit_price = Decimal(unit_price_item.text())
+                line_total = unit_price * Decimal(quantity)
+                subtotal += line_total
+
+                receipt_items.append(
+                    ReceiptItemData(
+                        service_name=service_name_item.text(),
+                        display_name=service_name_item.text(),
+                        variant=None,
+                        quantity=quantity,
+                        unit_price=unit_price,
+                        line_total=line_total,
+                    )
+                )
+
+            discount_value = Decimal(self.discount_input.text() or "0")
+            if self.discount_type_combo.currentIndex() == 0:
+                discount_amount = min(discount_value, subtotal)
+                discount_type = "flat"
+            else:
+                capped_percent = min(discount_value, Decimal("100"))
+                discount_amount = subtotal * (capped_percent / Decimal("100"))
+                discount_type = "percent"
+
+            taxable_total = subtotal - discount_amount
+            tax_percent = Decimal(self.tax_input.text() or "0")
+            tax_amount = taxable_total * (tax_percent / Decimal("100"))
+            total = taxable_total + tax_amount
+
+            receipt = ReceiptData(
+                bill_id=0,
+                bill_number="PREVIEW",
+                bill_datetime=datetime.now(),
+                subtotal=subtotal,
+                discount_amount=discount_amount,
+                tax_percent=tax_percent,
+                tax_amount=tax_amount,
+                total=total,
+                payment_method=self.payment_method_combo.currentText(),
+                payment_status=self.payment_status_combo.currentText(),
+                transaction_id=self.transaction_id_input.text().strip() or None,
+                customer_name=self.selected_customer.name,
+                customer_phone=self.selected_customer.phone,
+                staff_name=self.staff_combo.currentText() or "",
+                items=receipt_items,
+            )
+
+            return generate_receipt_pdf(
+                receipt=receipt,
+                settings_service=self._settings_service,
+                is_preview=True,
+            )
         except Exception as exc:
             QMessageBox.warning(self, "Preview Failed", f"Failed to generate preview: {exc}")
             return None

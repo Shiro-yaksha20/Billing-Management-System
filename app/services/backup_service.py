@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -40,6 +41,10 @@ class BackupService:
         if encrypt:
             if not password:
                 raise ValueError("Password required for encrypted backups")
+            if not self._is_strong_password(password):
+                raise ValueError(
+                    "Password must be at least 8 characters and include uppercase, lowercase, number, and special character"
+                )
             encrypted_path = backup_file.with_suffix(backup_file.suffix + ".enc")
             if not encrypt_file(str(backup_file), str(encrypted_path), password):
                 raise RuntimeError("Backup encryption failed")
@@ -77,3 +82,13 @@ class BackupService:
         for old_backup in backups[keep:]:
             old_backup.unlink(missing_ok=True)
             logger.info("Deleted old backup: %s", old_backup)
+
+    @staticmethod
+    def _is_strong_password(password: str) -> bool:
+        return bool(
+            len(password) >= 8
+            and re.search(r"[A-Z]", password)
+            and re.search(r"[a-z]", password)
+            and re.search(r"[0-9]", password)
+            and re.search(r"[^A-Za-z0-9]", password)
+        )

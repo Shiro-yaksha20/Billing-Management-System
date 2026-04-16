@@ -31,13 +31,15 @@ class NotificationService:
         total: str,
         attachment_path: Optional[str] = None,
     ) -> NotificationResult:
+        currency_symbol = self._settings_service.get_setting("currency_symbol", "?") or "?"
         template = self._settings_service.get_setting(
             "whatsapp_message_template",
-            "Hi {customer_name}, thank you for visiting {salon_name}. Your bill total is ?{total}.",
+            "Hi {customer_name}, thank you for visiting {business_name}. Your bill total is {currency_symbol}{total}.",
         )
         message = template.format(
             customer_name=customer_name,
-            salon_name=self._settings_service.get_setting("salon_name", ""),
+            business_name=self._settings_service.get_setting("business_name", ""),
+            currency_symbol=currency_symbol,
             total=total,
         )
         country_code = self._settings_service.get_setting("whatsapp_country_code", "91")

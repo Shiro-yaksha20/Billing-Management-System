@@ -51,79 +51,85 @@ def import_services_from_csv(
         return results
 
     try:
-        if clear_existing:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_file = str(BACKUP_DIR / f"backup_services_{timestamp}.csv")
-            try:
-                export_services_to_csv(backup_file, service_repo, active_only=False)
-                logger.warning("Backup created before clearing services: %s", backup_file)
-            except Exception as exc:
-                results["errors"].append("Backup failed prior to clearing existing services")
-                logger.error("Backup failed: %s", exc, exc_info=True)
-                return results
-
-            results["cleared"] = service_repo.delete_all()
-            logger.warning("DELETED %s existing services - backup at %s", results["cleared"], backup_file)
-
-        if deactivate_existing and not clear_existing:
-            results["deactivated"] = service_repo.deactivate_all()
-            logger.info("Deactivated %s existing services.", results["deactivated"])
-
-        with open(csv_file_path, "r", encoding="utf-8") as file_handle:
-            reader = csv.DictReader(file_handle)
-
-            required_cols = {"category", "service_name", "display_name", "price"}
-            if not required_cols.issubset(reader.fieldnames or []):
-                missing = required_cols - set(reader.fieldnames or [])
-                results["errors"].append(f"Missing required columns: {missing}")
-                return results
-
-            for row_num, row in enumerate(reader, start=2):
+        with service_repo._session_factory() as db:
+            if clear_existing:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                backup_file = str(BACKUP_DIR / f"backup_services_{timestamp}.csv")
                 try:
-                    display_name = (row.get("display_name") or "").strip()
-                    service_name = (row.get("service_name") or "").strip()
-                    category = (row.get("category") or "").strip() or None
-                    variant = (row.get("variant") or "").strip() or None
-                    notes = (row.get("notes") or "").strip() or None
-
-                    if not display_name or not service_name:
-                        results["errors"].append(
-                            f"Row {row_num}: Missing service_name/display_name"
-                        )
-                        results["skipped"] += 1
-                        continue
-
-                    try:
-                        price = Decimal(row["price"]) if row["price"] else None
-                        if price is not None and price < 0:
-                            raise InvalidOperation("negative price")
-                    except (InvalidOperation, ValueError):
-                        results["errors"].append(
-                            f"Row {row_num}: Invalid price '{row['price']}'"
-                        )
-                        results["skipped"] += 1
-                        continue
-
-                    updated = service_repo.upsert_from_import(
-                        display_name=display_name,
-                        name=service_name,
-                        category=category,
-                        variant=variant,
-                        price=price,
-                        notes=notes,
-                        active=True,
-                    )
-                    if updated:
-                        results["updated"] += 1
-                    else:
-                        results["imported"] += 1
+                    export_services_to_csv(backup_file, service_repo, active_only=False)
+                    logger.warning("Backup created before clearing services: %s", backup_file)
                 except Exception as exc:
-                    results["errors"].append(f"Row {row_num}: {str(exc)}")
-                    results["skipped"] += 1
-                    logger.error("Error importing row %s: %s", row_num, exc)
-                    if len(results["errors"]) > MAX_IMPORT_ERRORS:
-                        results["errors"].insert(0, "Import aborted: too many errors")
-                        return results
+                    results["errors"].append("Backup failed prior to clearing existing services")
+                    logger.error("Backup failed: %s", exc, exc_info=True)
+                    return results
+
+                results["cleared"] = service_repo.delete_all(db=db)
+                logger.warning(
+                    "DELETED %s existing services - backup at %s",
+                    results["cleared"],
+                    backup_file,
+                )
+
+            if deactivate_existing and not clear_existing:
+                results["deactivated"] = service_repo.deactivate_all(db=db)
+                logger.info("Deactivated %s existing services.", results["deactivated"])
+
+            with open(csv_file_path, "r", encoding="utf-8") as file_handle:
+                reader = csv.DictReader(file_handle)
+
+                required_cols = {"category", "service_name", "display_name", "price"}
+                if not required_cols.issubset(reader.fieldnames or []):
+                    missing = required_cols - set(reader.fieldnames or [])
+                    results["errors"].append(f"Missing required columns: {missing}")
+                    return results
+
+                for row_num, row in enumerate(reader, start=2):
+                    try:
+                        display_name = (row.get("display_name") or "").strip()
+                        service_name = (row.get("service_name") or "").strip()
+                        category = (row.get("category") or "").strip() or None
+                        variant = (row.get("variant") or "").strip() or None
+                        notes = (row.get("notes") or "").strip() or None
+
+                        if not display_name or not service_name:
+                            results["errors"].append(
+                                f"Row {row_num}: Missing service_name/display_name"
+                            )
+                            results["skipped"] += 1
+                            continue
+
+                        try:
+                            price = Decimal(row["price"]) if row["price"] else None
+                            if price is not None and price < 0:
+                                raise InvalidOperation("negative price")
+                        except (InvalidOperation, ValueError):
+                            results["errors"].append(
+                                f"Row {row_num}: Invalid price '{row['price']}'"
+                            )
+                            results["skipped"] += 1
+                            continue
+
+                        updated = service_repo.upsert_from_import(
+                            display_name=display_name,
+                            name=service_name,
+                            category=category,
+                            variant=variant,
+                            price=price,
+                            notes=notes,
+                            active=True,
+                            db=db,
+                        )
+                        if updated:
+                            results["updated"] += 1
+                        else:
+                            results["imported"] += 1
+                    except Exception as exc:
+                        results["errors"].append(f"Row {row_num}: {str(exc)}")
+                        results["skipped"] += 1
+                        logger.error("Error importing row %s: %s", row_num, exc)
+                        if len(results["errors"]) > MAX_IMPORT_ERRORS:
+                            results["errors"].insert(0, "Import aborted: too many errors")
+                            return results
 
         results["success"] = len(results["errors"]) == 0
         logger.info(

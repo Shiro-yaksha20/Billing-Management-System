@@ -25,7 +25,14 @@ def test_create_backup_encryption_failure(monkeypatch, backup_paths):
     monkeypatch.setattr(backup_service, "encrypt_file", _encrypt_file)
 
     with pytest.raises(RuntimeError):
-        service.create_backup(reason="test", encrypt=True, password="secret")
+        service.create_backup(reason="test", encrypt=True, password="Secret123!")
+
+
+def test_create_backup_weak_password_raises(backup_paths):
+    service = BackupService()
+
+    with pytest.raises(ValueError, match="Password must be at least 8 characters"):
+        service.create_backup(reason="test", encrypt=True, password="weak")
 
 
 def test_create_backup_upload_without_adapter(backup_paths):

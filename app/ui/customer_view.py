@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import os
+from decimal import Decimal
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QDialog,
     QGroupBox,
+    QHeaderView,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QTextEdit,
     QVBoxLayout,
+    QWidget,
 )
 
 from ..dto.customer_dto import CustomerData
@@ -25,10 +26,12 @@ from ..exceptions.validation_errors import ValidationError
 from ..services.billing_service import BillingService
 from ..services.customer_service import CustomerService
 from ..services.notification_service import NotificationService
+from ..services.settings_service import SettingsService
+from .helpers import format_money, open_pdf, send_whatsapp_receipt
 from .dialogs.customer_dialog import CustomerDialog
 
 
-class CustomerView(QDialog):
+class CustomerView(QWidget):
     """UI for managing customers."""
 
     def __init__(
@@ -36,16 +39,19 @@ class CustomerView(QDialog):
         customer_service: CustomerService,
         billing_service: BillingService,
         notification_service: NotificationService,
+        settings_service: SettingsService,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self._customer_service = customer_service
         self._billing_service = billing_service
         self._notification_service = notification_service
+        self._settings_service = settings_service
+        self._currency_symbol = self._settings_service.get_setting("currency_symbol", "?") or "?"
         self.setWindowTitle("Manage Customers")
         self.setMinimumWidth(800)
 
-        self.layout = QVBoxLayout(self)
+        self._main_layout = QVBoxLayout(self)
 
         search_layout = QHBoxLayout()
         self.search_input = QLineEdit()
@@ -53,7 +59,7 @@ class CustomerView(QDialog):
         self.search_button = QPushButton("Search")
         search_layout.addWidget(self.search_input)
         search_layout.addWidget(self.search_button)
-        self.layout.addLayout(search_layout)
+        self._main_layout.addLayout(search_layout)
 
         self.customer_table = QTableWidget()
         self.customer_table.setColumnCount(4)
@@ -62,11 +68,15 @@ class CustomerView(QDialog):
         self.customer_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.customer_table.setColumnHidden(3, True)
         self.customer_table.setSortingEnabled(True)
-        self.layout.addWidget(self.customer_table)
+        self.customer_table.horizontalHeader().setStretchLastSection(True)
+        self.customer_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.customer_table.setAlternatingRowColors(True)
+        self.customer_table.verticalHeader().setVisible(False)
+        self._main_layout.addWidget(self.customer_table)
 
         self.notes_area = QTextEdit()
         self.notes_area.setReadOnly(True)
-        self.layout.addWidget(self.notes_area)
+        self._main_layout.addWidget(self.notes_area)
 
         bills_group = QGroupBox("Bill History")
         bills_layout = QVBoxLayout()
@@ -74,6 +84,10 @@ class CustomerView(QDialog):
         self.bills_table.setColumnCount(5)
         self.bills_table.setHorizontalHeaderLabels(["Bill #", "Date", "Total", "Payment", "Status"])
         self.bills_table.setSortingEnabled(True)
+        self.bills_table.horizontalHeader().setStretchLastSection(True)
+        self.bills_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.bills_table.setAlternatingRowColors(True)
+        self.bills_table.verticalHeader().setVisible(False)
         bills_layout.addWidget(self.bills_table)
         self.view_receipt_btn = QPushButton("View Receipt PDF")
         self.view_receipt_btn.clicked.connect(self.view_selected_receipt)
@@ -82,7 +96,7 @@ class CustomerView(QDialog):
         bills_layout.addWidget(self.view_receipt_btn)
         bills_layout.addWidget(self.resend_whatsapp_btn)
         bills_group.setLayout(bills_layout)
-        self.layout.addWidget(bills_group)
+        self._main_layout.addWidget(bills_group)
 
         button_layout = QHBoxLayout()
         self.add_button = QPushButton("Add Customer")
@@ -91,7 +105,7 @@ class CustomerView(QDialog):
         button_layout.addWidget(self.add_button)
         button_layout.addWidget(self.edit_button)
         button_layout.addWidget(self.delete_button)
-        self.layout.addLayout(button_layout)
+        self._main_layout.addLayout(button_layout)
 
         self.search_button.clicked.connect(self.search_customers)
         self.search_input.returnPressed.connect(self.search_customers)
@@ -101,6 +115,9 @@ class CustomerView(QDialog):
         self.delete_button.clicked.connect(self.delete_customer)
 
         self.load_customers()
+
+    def refresh(self) -> None:
+        self.load_customers(self.search_input.text().strip() or None)
 
     def load_customers(self, search_term: str | None = None) -> None:
         self.customer_table.blockSignals(True)
@@ -151,7 +168,13 @@ class CustomerView(QDialog):
                 self.bills_table.setItem(i, 0, QTableWidgetItem(str(bill.bill_number or bill.id)))
                 bill_date = bill.bill_datetime.strftime("%Y-%m-%d") if bill.bill_datetime else ""
                 self.bills_table.setItem(i, 1, QTableWidgetItem(bill_date))
-                self.bills_table.setItem(i, 2, QTableWidgetItem(f"?{float(bill.total or 0):.0f}"))
+                self.bills_table.setItem(
+                    i,
+                    2,
+                    QTableWidgetItem(
+                        format_money(Decimal(bill.total or 0), self._currency_symbol)
+                    ),
+                )
                 self.bills_table.setItem(i, 3, QTableWidgetItem(bill.payment_method or ""))
                 self.bills_table.setItem(i, 4, QTableWidgetItem(bill.payment_status or "Paid"))
                 self.bills_table.item(i, 0).setData(Qt.ItemDataRole.UserRole, bill)
@@ -169,13 +192,9 @@ class CustomerView(QDialog):
             QMessageBox.warning(self, "No Bill Selected", "Please select a bill to view.")
             return
         pdf_path = bill.pdf_path
-        if pdf_path and os.path.exists(pdf_path):
-            try:
-                os.startfile(pdf_path)
-            except Exception:
-                QMessageBox.information(self, "Open Receipt", f"Receipt saved at:\n{pdf_path}")
-        else:
-            QMessageBox.warning(self, "Receipt Not Found", "PDF receipt file not found.")
+        if not pdf_path:
+            pdf_path = self._billing_service.generate_receipt(bill.id)
+        open_pdf(pdf_path, self, title="Open Receipt")
 
     def resend_whatsapp(self) -> None:
         row = self.bills_table.currentRow()
@@ -183,24 +202,15 @@ class CustomerView(QDialog):
             QMessageBox.warning(self, "No Bill Selected", "Please select a bill.")
             return
         bill = self.bills_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
-        if not bill or not bill.customer_phone:
-            QMessageBox.warning(self, "Missing Data", "Customer phone number is missing.")
+        if not bill:
+            QMessageBox.warning(self, "Missing Data", "Customer data is missing.")
             return
-        pdf_path = bill.pdf_path
-        if not pdf_path or not os.path.exists(pdf_path):
-            pdf_path = self._billing_service.generate_receipt(bill.id)
-        result = self._notification_service.send_whatsapp_receipt(
-            phone_number=bill.customer_phone,
-            customer_name=bill.customer_name or "Customer",
-            total=f"{float(bill.total or 0):.2f}",
-            attachment_path=pdf_path,
+        send_whatsapp_receipt(
+            bill=bill,
+            billing_service=self._billing_service,
+            notification_service=self._notification_service,
+            parent=self,
         )
-        if result.success:
-            self._billing_service.update_whatsapp_status(bill.id, "Sent")
-            QMessageBox.information(self, "WhatsApp Sent", "Receipt sent successfully.")
-        else:
-            self._billing_service.update_whatsapp_status(bill.id, "Failed", result.error_message)
-            QMessageBox.warning(self, "WhatsApp Failed", result.error_message or "Send failed")
 
     def add_customer(self) -> None:
         dialog = CustomerDialog(self._customer_service, self)

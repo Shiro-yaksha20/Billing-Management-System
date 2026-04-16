@@ -13,7 +13,7 @@ from ..models import Base
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": True},
+    connect_args={"check_same_thread": False},
     poolclass=StaticPool,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)

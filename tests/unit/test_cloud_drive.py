@@ -214,7 +214,7 @@ def test_cloud_drive_resolve_token_path_default(monkeypatch, tmp_path):
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-    assert adapter._resolve_token_path() == tmp_path / ".salon_billing" / "token.json"
+    assert adapter._resolve_token_path() == tmp_path / ".billing_app" / "token.json"
 
 
 def test_cloud_drive_load_credentials_uses_flow(monkeypatch, tmp_path):
@@ -225,3 +225,18 @@ def test_cloud_drive_load_credentials_uses_flow(monkeypatch, tmp_path):
     creds = adapter._load_credentials()
 
     assert creds is not None
+
+
+def test_cloud_drive_keyring_token_fallback(monkeypatch, tmp_path):
+    credentials_path, token_path = _install_google_stubs(monkeypatch, tmp_path)
+    token_path.unlink(missing_ok=True)
+
+    adapter = CloudDriveAdapter(credentials_path=str(credentials_path), token_path=str(token_path))
+
+    monkeypatch.setattr("keyring.get_password", lambda *args, **kwargs: None)
+    monkeypatch.setattr("keyring.set_password", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("no backend")))
+
+    creds = adapter._load_credentials()
+
+    assert creds is not None
+    assert token_path.exists()

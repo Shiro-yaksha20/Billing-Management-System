@@ -50,7 +50,12 @@ def send_whatsapp_message(
                     "messaging_product": (None, "whatsapp"),
                 }
                 upload_headers = {"Authorization": f"Bearer {token}"}
-                upload_response = requests.post(upload_url, headers=upload_headers, files=files)
+                upload_response = requests.post(
+                    upload_url,
+                    headers=upload_headers,
+                    files=files,
+                    timeout=(5, 30),
+                )
 
             if upload_response.status_code != 200:
                 logger.error("Failed to upload media to WhatsApp: %s", upload_response.text)
@@ -79,7 +84,12 @@ def send_whatsapp_message(
                 "text": {"body": message},
             }
 
-        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        response = requests.post(
+            url,
+            headers=headers,
+            data=json.dumps(payload),
+            timeout=(5, 30),
+        )
 
         if response.status_code == 200:
             logger.info("WhatsApp message sent to %s", to_number)

@@ -1,6 +1,6 @@
-# Salon Billing System
+# Billing Management System
 
-A production-ready Windows desktop billing application for salons, built with **Python** and **PyQt6**. Manages customers, services, staff, invoicing, PDF receipts, WhatsApp delivery, encrypted backups, and Excel exports — all from a single interface.
+A production-ready Windows desktop billing application for service businesses, built with **Python** and **PyQt6**. Manages customers, services, staff, invoicing, PDF receipts, WhatsApp delivery, encrypted backups, and Excel exports — all from a single interface.
 
 [![Release](https://img.shields.io/github/v/release/Shiro-yaksha20/Billing-Management-System)](https://github.com/Shiro-yaksha20/Billing-Management-System/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -13,7 +13,7 @@ A production-ready Windows desktop billing application for salons, built with **
 | Category | Highlights |
 |----------|-----------|
 | **Billing** | Create itemised bills, apply flat/percent discounts, calculate GST, select payment method |
-| **PDF Receipts** | Auto-generated receipts with salon branding, GST number, and Instagram handle |
+| **PDF Receipts** | Auto-generated receipts with business branding, GST number, and Instagram handle |
 | **WhatsApp** | Send PDF receipts to customers via the Meta Cloud API |
 | **Customers** | Add, edit, search, view visit history and spending summary |
 | **Services** | Category-based catalog with variants, CSV bulk import/export |
@@ -21,7 +21,7 @@ A production-ready Windows desktop billing application for salons, built with **
 | **Dashboard** | Today's sales, pending bills, recent transactions at a glance |
 | **Reports** | Export bills to Excel with date/customer filters |
 | **Backups** | Timestamped local backups, optional AES encryption, Google Drive upload |
-| **Settings** | Salon details, staff, services, WhatsApp integration — all in one place |
+| **Settings** | Business details, staff, services, WhatsApp integration — all in one place |
 
 ---
 
@@ -89,7 +89,7 @@ python main.py
 ### First-Time Setup
 
 1. Launch the app and navigate to **Settings**.
-2. Fill in your salon name, address, phone, and optional GST/Instagram.
+2. Fill in your business name, address, phone, and optional GST/Instagram.
 3. Add your **staff members** and **services** (or import services from a CSV).
 4. Optionally configure **WhatsApp** under the Integrations tab.
 

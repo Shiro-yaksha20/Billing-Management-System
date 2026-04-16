@@ -8,6 +8,7 @@ from typing import Callable, Iterable, Optional
 from sqlalchemy.orm import Session
 
 from .base_repository import BaseRepository
+from .utils import escape_like
 from ..models import Bill, Customer
 
 SessionFactory = Callable[[], AbstractContextManager[Session]]
@@ -23,8 +24,10 @@ class CustomerRepository(BaseRepository[Customer]):
         with self._session_factory() as db:
             query = db.query(Customer)
             if term:
+                safe_term = escape_like(term)
                 query = query.filter(
-                    Customer.name.ilike(f"%{term}%") | Customer.phone.ilike(f"%{term}%")
+                    Customer.name.ilike(f"%{safe_term}%", escape="\\")
+                    | Customer.phone.ilike(f"%{safe_term}%", escape="\\")
                 )
             return query.order_by(Customer.name).all()
 

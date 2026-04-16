@@ -82,6 +82,14 @@ def test_generate_receipt_pdf_with_optional_fields(settings_service, receipts_di
     assert Path(pdf_path).exists()
 
 
+def test_generate_receipt_pdf_preview_mode(settings_service, receipts_dir) -> None:
+    receipt = _build_receipt()
+
+    pdf_path = generate_receipt_pdf(receipt, settings_service, is_preview=True)
+
+    assert Path(pdf_path).exists()
+
+
 def test_generate_receipt_pdf_build_failure_cleans_temp(settings_service, receipts_dir, monkeypatch) -> None:
     receipt = _build_receipt()
 

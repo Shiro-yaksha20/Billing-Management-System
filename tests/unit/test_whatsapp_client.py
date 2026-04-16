@@ -43,7 +43,7 @@ def test_send_whatsapp_message_text_success(monkeypatch) -> None:
 
         text = "ok"
 
-    def _post(url, headers=None, data=None, files=None):
+    def _post(url, headers=None, data=None, files=None, timeout=None):
         return _Response()
 
     monkeypatch.setattr("requests.post", _post)
@@ -64,7 +64,7 @@ def test_send_whatsapp_message_text_failure(monkeypatch) -> None:
 
         text = "fail"
 
-    def _post(url, headers=None, data=None, files=None):
+    def _post(url, headers=None, data=None, files=None, timeout=None):
         return _Response()
 
     monkeypatch.setattr("requests.post", _post)
@@ -95,7 +95,7 @@ def test_send_whatsapp_message_with_attachment_success(tmp_path, monkeypatch) ->
 
         text = "ok"
 
-    def _post(url, headers=None, data=None, files=None):
+    def _post(url, headers=None, data=None, files=None, timeout=None):
         if url.endswith("/media"):
             return _UploadResponse()
         return _MessageResponse()
@@ -120,7 +120,7 @@ def test_send_whatsapp_message_upload_failure(tmp_path, monkeypatch) -> None:
 
         text = "fail"
 
-    def _post(url, headers=None, data=None, files=None):
+    def _post(url, headers=None, data=None, files=None, timeout=None):
         return _UploadResponse()
 
     monkeypatch.setattr("requests.post", _post)
@@ -169,7 +169,7 @@ def test_send_whatsapp_message_missing_media_id(tmp_path, monkeypatch) -> None:
 
         text = "ok"
 
-    def _post(url, headers=None, data=None, files=None):
+    def _post(url, headers=None, data=None, files=None, timeout=None):
         return _UploadResponse()
 
     monkeypatch.setattr("requests.post", _post)

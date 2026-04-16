@@ -5,18 +5,20 @@ from __future__ import annotations
 import shutil
 from datetime import datetime
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QRegularExpression, Qt
+from PyQt6.QtGui import QDoubleValidator, QRegularExpressionValidator
 from PyQt6.QtWidgets import (
-    QDialog,
     QFileDialog,
     QFormLayout,
     QGroupBox,
+    QHeaderView,
     QHBoxLayout,
     QInputDialog,
     QLineEdit,
     QListWidget,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -32,13 +34,14 @@ from ..services.restore_service import RestoreService
 from ..services.service_catalog import ServiceCatalog
 from ..services.settings_service import SettingsService
 from ..services.staff_service import StaffService
+from .helpers import confirm_action
 from .dialogs.log_viewer_dialog import LogViewerDialog
 from .dialogs.service_dialog import ServiceDialog
 from .dialogs.staff_dialog import StaffDialog
 
 
-class SettingsView(QDialog):
-    """Settings dialog UI."""
+class SettingsView(QWidget):
+    """Settings page UI."""
 
     def __init__(
         self,
@@ -58,9 +61,9 @@ class SettingsView(QDialog):
         self.setWindowTitle("Settings")
         self.setMinimumWidth(600)
 
-        self.layout = QVBoxLayout(self)
+        self._main_layout = QVBoxLayout(self)
         self.tab_widget = QTabWidget()
-        self.layout.addWidget(self.tab_widget)
+        self._main_layout.addWidget(self.tab_widget)
 
         self.general_tab = QWidget()
         self.staff_tab = QWidget()
@@ -86,45 +89,74 @@ class SettingsView(QDialog):
         self.button_box.addStretch()
         self.button_box.addWidget(self.save_button)
         self.button_box.addWidget(self.cancel_button)
-        self.layout.addLayout(self.button_box)
+        self._main_layout.addLayout(self.button_box)
 
         self.save_button.clicked.connect(self.save_settings)
-        self.cancel_button.clicked.connect(self.reject)
+        self.cancel_button.clicked.connect(self._reset_current_tab)
+
+    def refresh(self) -> None:
+        self.load_general_settings()
+        self.load_staff_data()
+        self.load_service_data()
+        self.load_category_data()
+        self.load_integrations_settings()
+
+    def _reset_current_tab(self) -> None:
+        current_index = self.tab_widget.currentIndex()
+        if current_index == 0:
+            self.load_general_settings()
+        elif current_index == 1:
+            self.load_staff_data()
+        elif current_index == 2:
+            self.load_service_data()
+            self.load_category_data()
+        elif current_index == 3:
+            self.load_integrations_settings()
 
     def setup_general_tab(self) -> None:
-        layout = QFormLayout(self.general_tab)
+        tab_layout = QVBoxLayout(self.general_tab)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        layout = QFormLayout(content)
 
-        self.salon_name_input = QLineEdit()
-        self.salon_address_input = QTextEdit()
-        self.salon_phone_input = QLineEdit()
-        self.salon_gstin_input = QLineEdit()
+        self.business_name_input = QLineEdit()
+        self.business_address_input = QTextEdit()
+        self.business_phone_input = QLineEdit()
+        self.business_gstin_input = QLineEdit()
         self.default_tax_percent_input = QLineEdit()
+        self.default_tax_percent_input.setValidator(QDoubleValidator(0.0, 100.0, 2, self))
+        self.currency_symbol_input = QLineEdit()
         self.thank_you_message_input = QLineEdit()
 
-        self.salon_instagram_input = QLineEdit()
-        self.salon_tagline_input = QLineEdit()
-        self.salon_logo_path_input = QLineEdit()
-        self.salon_logo_path_input.setReadOnly(True)
+        self.business_instagram_input = QLineEdit()
+        self.business_tagline_input = QLineEdit()
+        self.business_logo_path_input = QLineEdit()
+        self.business_logo_path_input.setReadOnly(True)
         self.browse_logo_button = QPushButton("Browse...")
         logo_row = QHBoxLayout()
-        logo_row.addWidget(self.salon_logo_path_input)
+        logo_row.addWidget(self.business_logo_path_input)
         logo_row.addWidget(self.browse_logo_button)
 
         self.google_review_link_input = QLineEdit()
         self.receipt_footer_message_input = QTextEdit()
         self.receipt_footer_message_input.setMaximumHeight(100)
 
-        layout.addRow("Salon Name:", self.salon_name_input)
-        layout.addRow("Address:", self.salon_address_input)
-        layout.addRow("Phone:", self.salon_phone_input)
-        layout.addRow("GSTIN:", self.salon_gstin_input)
+        layout.addRow("Business Name:", self.business_name_input)
+        layout.addRow("Business Address:", self.business_address_input)
+        layout.addRow("Business Phone:", self.business_phone_input)
+        layout.addRow("Tax ID / GSTIN:", self.business_gstin_input)
         layout.addRow("Default Tax %:", self.default_tax_percent_input)
+        layout.addRow("Currency Symbol:", self.currency_symbol_input)
         layout.addRow("Thank You Message:", self.thank_you_message_input)
-        layout.addRow("Instagram Handle:", self.salon_instagram_input)
-        layout.addRow("Tagline:", self.salon_tagline_input)
-        layout.addRow("Salon Logo:", logo_row)
+        layout.addRow("Instagram Handle:", self.business_instagram_input)
+        layout.addRow("Tagline:", self.business_tagline_input)
+        layout.addRow("Business Logo:", logo_row)
         layout.addRow("Google Review Link:", self.google_review_link_input)
         layout.addRow("Receipt Footer:", self.receipt_footer_message_input)
+
+        scroll.setWidget(content)
+        tab_layout.addWidget(scroll)
 
         self.browse_logo_button.clicked.connect(self.browse_logo_file)
         self.load_general_settings()
@@ -137,20 +169,21 @@ class SettingsView(QDialog):
             "Images (*.png *.jpg *.jpeg *.bmp);;All Files (*)",
         )
         if file_path:
-            self.salon_logo_path_input.setText(file_path)
+            self.business_logo_path_input.setText(file_path)
 
     def load_general_settings(self) -> None:
-        self.salon_name_input.setText(self._settings_service.get_setting("salon_name", ""))
-        self.salon_address_input.setPlainText(self._settings_service.get_setting("salon_address", ""))
-        self.salon_phone_input.setText(self._settings_service.get_setting("salon_phone", ""))
-        self.salon_gstin_input.setText(self._settings_service.get_setting("salon_gstin", ""))
+        self.business_name_input.setText(self._settings_service.get_setting("business_name", ""))
+        self.business_address_input.setPlainText(self._settings_service.get_setting("business_address", ""))
+        self.business_phone_input.setText(self._settings_service.get_setting("business_phone", ""))
+        self.business_gstin_input.setText(self._settings_service.get_setting("business_gstin", ""))
         self.default_tax_percent_input.setText(self._settings_service.get_setting("default_tax_percent", "0"))
+        self.currency_symbol_input.setText(self._settings_service.get_setting("currency_symbol", "?"))
         self.thank_you_message_input.setText(
             self._settings_service.get_setting("thank_you_message", "Thank you for your visit!")
         )
-        self.salon_instagram_input.setText(self._settings_service.get_setting("salon_instagram", ""))
-        self.salon_tagline_input.setText(self._settings_service.get_setting("salon_tagline", ""))
-        self.salon_logo_path_input.setText(self._settings_service.get_setting("salon_logo_path", ""))
+        self.business_instagram_input.setText(self._settings_service.get_setting("business_instagram", ""))
+        self.business_tagline_input.setText(self._settings_service.get_setting("business_tagline", ""))
+        self.business_logo_path_input.setText(self._settings_service.get_setting("business_logo_path", ""))
         self.google_review_link_input.setText(self._settings_service.get_setting("google_review_link", ""))
         self.receipt_footer_message_input.setPlainText(
             self._settings_service.get_setting("receipt_footer_message", "Thank you for visiting!")
@@ -165,29 +198,30 @@ class SettingsView(QDialog):
             QMessageBox.warning(self, "Invalid Tax", f"Invalid tax percentage: {exc}")
             return False
 
-        if not self.salon_name_input.text().strip():
-            QMessageBox.warning(self, "Missing Name", "Salon name is required")
+        if not self.business_name_input.text().strip():
+            QMessageBox.warning(self, "Missing Name", "Business name is required")
             return False
 
-        phone = self.salon_phone_input.text().strip()
+        phone = self.business_phone_input.text().strip()
         if phone and not phone.replace("+", "").replace("-", "").replace(" ", "").isdigit():
             QMessageBox.warning(self, "Invalid Phone", "Phone number contains invalid characters")
             return False
 
-        gstin = self.salon_gstin_input.text().strip()
+        gstin = self.business_gstin_input.text().strip()
         if gstin and (len(gstin) != 15 or not gstin.isalnum()):
             QMessageBox.warning(self, "Invalid GSTIN", "GSTIN must be 15 alphanumeric characters")
             return False
 
-        self._settings_service.set_setting("salon_name", self.salon_name_input.text())
-        self._settings_service.set_setting("salon_address", self.salon_address_input.toPlainText())
-        self._settings_service.set_setting("salon_phone", phone)
-        self._settings_service.set_setting("salon_gstin", gstin)
+        self._settings_service.set_setting("business_name", self.business_name_input.text())
+        self._settings_service.set_setting("business_address", self.business_address_input.toPlainText())
+        self._settings_service.set_setting("business_phone", phone)
+        self._settings_service.set_setting("business_gstin", gstin)
         self._settings_service.set_setting("default_tax_percent", str(tax))
+        self._settings_service.set_setting("currency_symbol", self.currency_symbol_input.text().strip() or "?")
         self._settings_service.set_setting("thank_you_message", self.thank_you_message_input.text())
-        self._settings_service.set_setting("salon_instagram", self.salon_instagram_input.text().strip())
-        self._settings_service.set_setting("salon_tagline", self.salon_tagline_input.text().strip())
-        self._settings_service.set_setting("salon_logo_path", self.salon_logo_path_input.text().strip())
+        self._settings_service.set_setting("business_instagram", self.business_instagram_input.text().strip())
+        self._settings_service.set_setting("business_tagline", self.business_tagline_input.text().strip())
+        self._settings_service.set_setting("business_logo_path", self.business_logo_path_input.text().strip())
         self._settings_service.set_setting("google_review_link", self.google_review_link_input.text().strip())
         self._settings_service.set_setting(
             "receipt_footer_message", self.receipt_footer_message_input.toPlainText().strip()
@@ -203,6 +237,10 @@ class SettingsView(QDialog):
         self.staff_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.staff_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.staff_table.setSortingEnabled(True)
+        self.staff_table.horizontalHeader().setStretchLastSection(True)
+        self.staff_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.staff_table.setAlternatingRowColors(True)
+        self.staff_table.verticalHeader().setVisible(False)
         layout.addWidget(self.staff_table)
 
         button_layout = QHBoxLayout()
@@ -267,6 +305,9 @@ class SettingsView(QDialog):
             return
 
         staff_id = item.data(Qt.ItemDataRole.UserRole)
+        name = item.text()
+        if not confirm_action(self, "Toggle Staff", f"Change active status for {name}?"):
+            return
         try:
             self._staff_service.toggle_active(staff_id)
             self.load_staff_data()
@@ -314,6 +355,10 @@ class SettingsView(QDialog):
         self.services_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.services_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.services_table.setSortingEnabled(True)
+        self.services_table.horizontalHeader().setStretchLastSection(True)
+        self.services_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.services_table.setAlternatingRowColors(True)
+        self.services_table.verticalHeader().setVisible(False)
         layout.addWidget(self.services_table)
 
         button_layout = QHBoxLayout()
@@ -440,6 +485,9 @@ class SettingsView(QDialog):
             return
 
         service_id = item.data(Qt.ItemDataRole.UserRole)
+        name = item.text()
+        if not confirm_action(self, "Toggle Service", f"Change active status for {name}?"):
+            return
         if not self._service_catalog.toggle_active(service_id):
             QMessageBox.critical(self, "Error", "Service not found in database.")
         self.load_service_data()
@@ -561,7 +609,7 @@ class SettingsView(QDialog):
         self.whatsapp_message_template_input.setPlainText(
             self._settings_service.get_setting(
                 "whatsapp_message_template",
-                "Hi {customer_name}, thank you for visiting {salon_name}. Your bill total is ?{total}. Your receipt is attached.",
+                "Hi {customer_name}, thank you for visiting {business_name}. Your bill total is {currency_symbol}{total}. Your receipt is attached.",
             )
         )
         if self._settings_service.get_secret("whatsapp_api_token"):
@@ -649,6 +697,13 @@ class SettingsView(QDialog):
         if not file_path:
             return
 
+        if not confirm_action(
+            self,
+            "Restore Backup",
+            "This will OVERWRITE your current database. Continue?",
+        ):
+            return
+
         result = self._restore_service.restore_from_file(file_path)
         if result.success:
             QMessageBox.information(
@@ -664,4 +719,3 @@ class SettingsView(QDialog):
             return
         self.save_integrations_settings()
         QMessageBox.information(self, "Settings Saved", "Your settings have been saved successfully.")
-        self.accept()

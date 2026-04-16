@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from contextlib import AbstractContextManager
 from datetime import datetime
+from decimal import Decimal
 from typing import Callable, Iterable, Optional
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session, selectinload
 
 from .base_repository import BaseRepository
+from .utils import escape_like
 from ..models import Bill, BillItem, Customer
 
 SessionFactory = Callable[[], AbstractContextManager[Session]]
@@ -66,9 +69,13 @@ class BillRepository(BaseRepository[Bill]):
         with self._session_factory() as db:
             query = db.query(Bill).options(selectinload(Bill.customer))
             if bill_number:
-                query = query.filter(Bill.bill_number.ilike(f"%{bill_number}%"))
+                safe_bill_number = escape_like(bill_number)
+                query = query.filter(Bill.bill_number.ilike(f"%{safe_bill_number}%", escape="\\"))
             if customer_name:
-                query = query.join(Customer).filter(Customer.name.ilike(f"%{customer_name}%"))
+                safe_customer_name = escape_like(customer_name)
+                query = query.join(Customer).filter(
+                    Customer.name.ilike(f"%{safe_customer_name}%", escape="\\")
+                )
             if start_date:
                 query = query.filter(Bill.bill_datetime >= start_date)
             if end_date:
@@ -142,3 +149,33 @@ class BillRepository(BaseRepository[Bill]):
             if customer_id:
                 query = query.filter(Bill.customer_id == customer_id)
             return query.order_by(Bill.bill_datetime.desc()).all()
+
+    def get_daily_stats(self, target_date) -> dict:
+        """Get aggregated daily dashboard statistics via SQL."""
+        start = datetime.combine(target_date, datetime.min.time())
+        end = datetime.combine(target_date, datetime.max.time())
+
+        with self._session_factory() as db:
+            result = db.execute(
+                text(
+                    """
+                    SELECT
+                        COUNT(*) AS total_bills,
+                        COALESCE(SUM(CASE WHEN payment_status = 'Paid' THEN total END), 0) AS paid_total,
+                        COALESCE(SUM(CASE WHEN payment_status = 'Pending' THEN total END), 0) AS pending_total,
+                        COUNT(CASE WHEN payment_status = 'Pending' THEN 1 END) AS pending_count,
+                        COUNT(DISTINCT customer_id) AS unique_customers
+                    FROM bill
+                    WHERE bill_datetime BETWEEN :start AND :end
+                    """
+                ),
+                {"start": start, "end": end},
+            ).fetchone()
+
+            return {
+                "total_bills": int(result[0] or 0),
+                "paid_total": Decimal(str(result[1] or 0)),
+                "pending_total": Decimal(str(result[2] or 0)),
+                "pending_count": int(result[3] or 0),
+                "unique_customers": int(result[4] or 0),
+            }

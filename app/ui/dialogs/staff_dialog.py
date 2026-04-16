@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from PyQt6.QtCore import QRegularExpression
+from PyQt6.QtGui import QRegularExpressionValidator
 from PyQt6.QtWidgets import QDialog, QFormLayout, QHBoxLayout, QLineEdit, QMessageBox, QPushButton
 
 from ...exceptions.business_errors import InsufficientDataError, StaffNotFoundError
@@ -20,6 +22,9 @@ class StaffDialog(QDialog):
         self.name_input = QLineEdit()
         self.role_input = QLineEdit()
         self.phone_input = QLineEdit()
+        self.phone_input.setValidator(
+            QRegularExpressionValidator(QRegularExpression(r"^\+?[0-9\-\s\(\)]{7,20}$"), self)
+        )
 
         if self._staff_id:
             self.setWindowTitle("Edit Staff")

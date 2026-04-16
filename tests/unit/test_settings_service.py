@@ -34,6 +34,26 @@ def test_set_setting_updates_value() -> None:
     assert repo.setting.value == "value"
 
 
+def test_set_setting_migrates_legacy_key_to_business_key() -> None:
+    repo = _StubSettingsRepo()
+    service = SettingsService(repo)
+
+    service.set_setting("salon_name", "Acme")
+
+    assert repo.setting is not None
+    assert repo.setting.key == "business_name"
+    assert repo.setting.value == "Acme"
+
+
+def test_get_setting_reads_legacy_key_via_business_alias() -> None:
+    repo = _StubSettingsRepo(setting=Setting(key="salon_name", value="Legacy Salon"))
+    service = SettingsService(repo)
+
+    result = service.get_setting("business_name", "default")
+
+    assert result == "Legacy Salon"
+
+
 def test_get_secret_returns_value(monkeypatch) -> None:
     repo = _StubSettingsRepo()
     service = SettingsService(repo)

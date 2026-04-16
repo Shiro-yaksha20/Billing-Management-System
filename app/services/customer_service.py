@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 from typing import Iterable, List
 
-from sqlalchemy import inspect as sa_inspect
-
 from ..dto.bill_dto import BillData
+from ..dto.converters import bill_to_dto
 from ..dto.customer_dto import CustomerData, CustomerSummary
 from ..exceptions.business_errors import CustomerNotFoundError, InsufficientDataError
 from ..exceptions.validation_errors import ValidationError
@@ -52,18 +52,37 @@ class CustomerService:
         if not name.strip() or not phone.strip():
             raise InsufficientDataError("Customer name and phone are required.")
 
-        customer = Customer(name=name.strip(), phone=phone.strip(), notes=notes)
+        normalized_phone = self._normalize_phone(phone)
+        if not normalized_phone:
+            raise ValidationError("Customer phone number is invalid.")
+
+        customer = Customer(name=name.strip(), phone=normalized_phone, notes=notes)
         created = self._customer_repo.add(customer)
         return self._to_customer_data(created)
 
     def update_customer(self, customer_id: int, data: CustomerData) -> CustomerData:
         """Update an existing customer."""
+        if not self._customer_repo.get_by_id(customer_id):
+            raise CustomerNotFoundError("Customer not found.")
+
+        normalized_phone = self._normalize_phone(data.phone)
+        if not normalized_phone:
+            raise ValidationError("Customer phone number is invalid.")
+
         updated = self._customer_repo.update_customer(
-            customer_id, data.name.strip(), data.phone.strip(), data.notes
+            customer_id, data.name.strip(), normalized_phone, data.notes
         )
         if not updated:
             raise CustomerNotFoundError("Customer not found.")
         return self._to_customer_data(updated)
+
+    @staticmethod
+    def _normalize_phone(phone: str) -> str | None:
+        cleaned = re.sub(r"[\s\-\(\)]", "", phone.strip())
+        if cleaned.startswith("+"):
+            digits = cleaned[1:]
+            return cleaned if digits.isdigit() and 3 <= len(digits) <= 15 else None
+        return cleaned if cleaned.isdigit() and 3 <= len(cleaned) <= 15 else None
 
     def get_customer_bills(self, customer_id: int) -> List[BillData]:
         """Return bill history for a customer."""
@@ -91,32 +110,4 @@ class CustomerService:
 
     @staticmethod
     def _to_bill_data(bill: Bill) -> BillData:
-        customer = None
-        try:
-            state = sa_inspect(bill)
-            if "customer" not in state.unloaded:
-                customer = bill.customer
-        except Exception:
-            customer = None
-        return BillData(
-            id=bill.id,
-            bill_number=bill.bill_number,
-            customer_id=bill.customer_id,
-            staff_id=bill.staff_id,
-            bill_datetime=bill.bill_datetime,
-            subtotal=Decimal(bill.subtotal or 0),
-            discount_amount=Decimal(bill.discount_amount or 0),
-            discount_type=bill.discount_type or "none",
-            tax_amount=Decimal(bill.tax_amount or 0),
-            tax_percent=Decimal(bill.tax_percent or 0),
-            total=Decimal(bill.total or 0),
-            payment_method=bill.payment_method or "Cash",
-            status=bill.status or "Paid",
-            pdf_path=bill.pdf_path,
-            whatsapp_status=bill.whatsapp_status or "Not Sent",
-            whatsapp_last_error=bill.whatsapp_last_error,
-            transaction_id=bill.transaction_id,
-            payment_status=bill.payment_status or "Paid",
-            customer_name=customer.name if customer else None,
-            customer_phone=customer.phone if customer else None,
-        )
+        return bill_to_dto(bill)

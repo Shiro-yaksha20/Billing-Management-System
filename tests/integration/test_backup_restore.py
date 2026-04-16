@@ -31,7 +31,7 @@ def test_create_backup_encrypted_round_trip(temp_db, backup_paths):
     """Validate encrypted backup and restore using a temporary database file."""
     original_bytes = Path(temp_db).read_bytes()
 
-    backup_info = BackupService().create_backup(reason="test", encrypt=True, password="secret")
+    backup_info = BackupService().create_backup(reason="test", encrypt=True, password="Secret123!")
     backup_path = Path(backup_info.path)
     assert backup_path.exists()
 
@@ -40,7 +40,7 @@ def test_create_backup_encrypted_round_trip(temp_db, backup_paths):
     result = RestoreService().restore_backup(
         str(backup_path),
         decrypt=True,
-        password="secret",
+        password="Secret123!",
     )
     assert result.success
     assert Path(temp_db).read_bytes() == original_bytes
@@ -92,7 +92,7 @@ def test_restore_missing_file_returns_failure(backup_paths):
 
 def test_restore_decrypt_wrong_password_returns_failure(temp_db, backup_paths):
     """Restore should fail when the decryption password is incorrect."""
-    backup_info = BackupService().create_backup(reason="test", encrypt=True, password="secret")
+    backup_info = BackupService().create_backup(reason="test", encrypt=True, password="Secret123!")
     result = RestoreService().restore_backup(
         backup_info.path,
         decrypt=True,

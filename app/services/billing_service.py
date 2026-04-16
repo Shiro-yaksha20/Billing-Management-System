@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Iterable, List
 
-from sqlalchemy import inspect as sa_inspect
-
 from ..dto.bill_dto import BillData, BillItemInput, BillOptions, DashboardStats
+from ..dto.converters import bill_to_dto
 from ..dto.receipt_dto import ReceiptData, ReceiptItemData
 from ..exceptions.business_errors import (
     CustomerNotFoundError,
@@ -92,7 +91,7 @@ class BillingService:
         bill = Bill(
             customer_id=customer_id,
             staff_id=staff_id,
-            bill_datetime=datetime.utcnow(),
+            bill_datetime=datetime.now(timezone.utc),
             subtotal=subtotal,
             discount_amount=discount_amount,
             discount_type=options.discount_type,
@@ -117,8 +116,9 @@ class BillingService:
 
         persisted_bill = self._bill_repo.add(bill)
         if not persisted_bill.bill_number:
-            self._bill_repo.update_bill_number(persisted_bill.id, str(persisted_bill.id))
-            persisted_bill.bill_number = str(persisted_bill.id)
+            bill_number = self._generate_bill_number(persisted_bill)
+            self._bill_repo.update_bill_number(persisted_bill.id, bill_number)
+            persisted_bill.bill_number = bill_number
 
         self._customer_repo.update_last_visit(customer_id, persisted_bill.bill_datetime)
 
@@ -157,58 +157,21 @@ class BillingService:
     def get_dashboard_stats(self) -> DashboardStats:
         """Get statistics for the dashboard."""
         today = date.today()
-        today_start = datetime.combine(today, datetime.min.time())
-        today_end = datetime.combine(today, datetime.max.time())
-
-        today_bills = list(self._bill_repo.find_by_date_range(today_start, today_end))
-        paid_bills = [b for b in today_bills if (b.payment_status or "") == "Paid"]
-        pending_bills = [b for b in today_bills if (b.payment_status or "") == "Pending"]
-
-        today_sales = sum((Decimal(b.total or 0) for b in paid_bills), Decimal("0"))
-        pending_amount = sum((Decimal(b.total or 0) for b in pending_bills), Decimal("0"))
+        stats_data = self._bill_repo.get_daily_stats(today)
         recent_bills = list(self._bill_repo.find_recent(limit=5))
-        customer_ids = {b.customer_id for b in today_bills if b.customer_id}
 
         return DashboardStats(
-            today_sales=today_sales,
-            today_bills_count=len(today_bills),
-            pending_amount=pending_amount,
-            pending_count=len(pending_bills),
-            today_customers=len(customer_ids),
+            today_sales=stats_data["paid_total"],
+            today_bills_count=stats_data["total_bills"],
+            pending_amount=stats_data["pending_total"],
+            pending_count=stats_data["pending_count"],
+            today_customers=stats_data["unique_customers"],
             recent_bills=[self._to_bill_data(b) for b in recent_bills],
         )
 
     @staticmethod
     def _to_bill_data(bill: Bill) -> BillData:
-        customer = None
-        try:
-            state = sa_inspect(bill)
-            if "customer" not in state.unloaded:
-                customer = bill.customer
-        except Exception:
-            customer = None
-        return BillData(
-            id=bill.id,
-            bill_number=bill.bill_number,
-            customer_id=bill.customer_id,
-            staff_id=bill.staff_id,
-            bill_datetime=bill.bill_datetime,
-            subtotal=Decimal(bill.subtotal or 0),
-            discount_amount=Decimal(bill.discount_amount or 0),
-            discount_type=bill.discount_type or "none",
-            tax_amount=Decimal(bill.tax_amount or 0),
-            tax_percent=Decimal(bill.tax_percent or 0),
-            total=Decimal(bill.total or 0),
-            payment_method=bill.payment_method or "Cash",
-            status=bill.status or "Paid",
-            pdf_path=bill.pdf_path,
-            whatsapp_status=bill.whatsapp_status or "Not Sent",
-            whatsapp_last_error=bill.whatsapp_last_error,
-            transaction_id=bill.transaction_id,
-            payment_status=bill.payment_status or "Paid",
-            customer_name=customer.name if customer else None,
-            customer_phone=customer.phone if customer else None,
-        )
+        return bill_to_dto(bill)
 
     def generate_receipt(self, bill_id: int) -> str:
         """Generate a receipt PDF for the given bill id."""
@@ -250,3 +213,8 @@ class BillingService:
     def update_whatsapp_status(self, bill_id: int, status: str, error: str | None = None) -> None:
         """Update WhatsApp status for a bill."""
         self._bill_repo.update_whatsapp_status(bill_id, status, error)
+
+    def _generate_bill_number(self, bill: Bill) -> str:
+        prefix = self._settings_service.get_setting("bill_number_prefix", "INV") or "INV"
+        year = bill.bill_datetime.year if bill.bill_datetime else datetime.now().year
+        return f"{prefix}-{year}-{bill.id:04d}"

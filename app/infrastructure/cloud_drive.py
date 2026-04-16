@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import List, Optional
 
+import keyring
+
 logger = logging.getLogger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+KEYRING_SERVICE_NAME = "BillingApp"
+CLOUD_DRIVE_TOKEN_KEY = "cloud_drive_token"
 
 
 class CloudDriveAdapter:
@@ -118,7 +123,10 @@ class CloudDriveAdapter:
 
         token_path = self._resolve_token_path()
         creds = None
-        if token_path.exists():
+        token_payload = self._read_token_payload()
+        if token_payload and hasattr(Credentials, "from_authorized_user_info"):
+            creds = Credentials.from_authorized_user_info(json.loads(token_payload), SCOPES)
+        elif token_path.exists():
             creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
 
         if creds and creds.expired and creds.refresh_token:
@@ -130,8 +138,17 @@ class CloudDriveAdapter:
             flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
             creds = flow.run_local_server(port=0)
 
-        token_path.parent.mkdir(parents=True, exist_ok=True)
-        token_path.write_text(creds.to_json(), encoding="utf-8")
+        token_json = creds.to_json()
+        token_saved = self._write_token_payload(token_json)
+
+        if self._token_path or not token_saved:
+            token_path.parent.mkdir(parents=True, exist_ok=True)
+            token_path.write_text(token_json, encoding="utf-8")
+            try:
+                token_path.chmod(0o600)
+            except OSError:
+                logger.warning("Could not set strict permissions on token file: %s", token_path)
+
         return creds
 
     def _resolve_token_path(self) -> Path:
@@ -139,4 +156,28 @@ class CloudDriveAdapter:
             return Path(self._token_path)
         if self._credentials_path:
             return Path(self._credentials_path).with_name("token.json")
-        return Path.home() / ".salon_billing" / "token.json"
+        return Path.home() / ".billing_app" / "token.json"
+
+    def _token_storage_key(self) -> str:
+        if self._credentials_path:
+            return f"{CLOUD_DRIVE_TOKEN_KEY}:{Path(self._credentials_path).name}"
+        return CLOUD_DRIVE_TOKEN_KEY
+
+    def _read_token_payload(self) -> str | None:
+        try:
+            return keyring.get_password(KEYRING_SERVICE_NAME, self._token_storage_key())
+        except Exception as exc:
+            logger.warning("Keyring read for cloud token failed: %s", exc)
+            return None
+
+    def _write_token_payload(self, token_payload: str) -> bool:
+        try:
+            keyring.set_password(
+                KEYRING_SERVICE_NAME,
+                self._token_storage_key(),
+                token_payload,
+            )
+            return True
+        except Exception as exc:
+            logger.warning("Keyring write for cloud token failed: %s", exc)
+            return False

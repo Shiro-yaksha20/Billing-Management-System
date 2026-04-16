@@ -80,13 +80,17 @@ class ServiceRepository(BaseRepository[Service]):
                 query = query.filter(Service.active == True)
             return query.order_by(Service.category, Service.name, Service.variant).all()
 
-    def deactivate_all(self) -> int:
-        with self._session_factory() as db:
+    def deactivate_all(self, db: Session | None = None) -> int:
+        if db is not None:
             return db.query(Service).update({Service.active: False}, synchronize_session=False)
+        with self._session_factory() as local_db:
+            return local_db.query(Service).update({Service.active: False}, synchronize_session=False)
 
-    def delete_all(self) -> int:
-        with self._session_factory() as db:
+    def delete_all(self, db: Session | None = None) -> int:
+        if db is not None:
             return db.query(Service).delete()
+        with self._session_factory() as local_db:
+            return local_db.query(Service).delete()
 
     def upsert_from_import(
         self,
@@ -97,29 +101,42 @@ class ServiceRepository(BaseRepository[Service]):
         price,
         notes: str | None,
         active: bool = True,
+        db: Session | None = None,
     ) -> bool:
-        with self._session_factory() as db:
-            service = db.query(Service).filter(Service.display_name == display_name).first()
-            if service:
-                service.category = category
-                service.name = name
-                service.variant = variant
-                service.display_name = display_name
-                service.price = price
-                service.notes = notes
-                service.active = active
-                return True
-            service = Service(
-                category=category,
-                name=name,
-                variant=variant,
-                display_name=display_name,
-                price=price,
-                notes=notes,
-                active=active,
-            )
-            db.add(service)
-            return False
+        if db is None:
+            with self._session_factory() as local_db:
+                return self.upsert_from_import(
+                    display_name=display_name,
+                    name=name,
+                    category=category,
+                    variant=variant,
+                    price=price,
+                    notes=notes,
+                    active=active,
+                    db=local_db,
+                )
+
+        service = db.query(Service).filter(Service.display_name == display_name).first()
+        if service:
+            service.category = category
+            service.name = name
+            service.variant = variant
+            service.display_name = display_name
+            service.price = price
+            service.notes = notes
+            service.active = active
+            return True
+        service = Service(
+            category=category,
+            name=name,
+            variant=variant,
+            display_name=display_name,
+            price=price,
+            notes=notes,
+            active=active,
+        )
+        db.add(service)
+        return False
 
     def update_service(
         self,

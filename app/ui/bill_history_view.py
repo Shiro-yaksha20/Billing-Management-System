@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional
 
 from PyQt6.QtCore import QDate, Qt
@@ -11,9 +12,9 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDateEdit,
-    QDialog,
     QFormLayout,
     QGroupBox,
+    QHeaderView,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -22,25 +23,31 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from ..dto.bill_dto import BillData
 from ..services.billing_service import BillingService
 from ..services.notification_service import NotificationService
+from ..services.settings_service import SettingsService
+from .helpers import format_money, open_pdf, send_whatsapp_receipt
 
 
-class BillHistoryView(QDialog):
+class BillHistoryView(QWidget):
     """View for displaying and managing bill history."""
 
     def __init__(
         self,
         billing_service: BillingService,
         notification_service: NotificationService,
+        settings_service: SettingsService,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self._billing_service = billing_service
         self._notification_service = notification_service
+        self._settings_service = settings_service
+        self._currency_symbol = self._settings_service.get_setting("currency_symbol", "?") or "?"
         self._selected_bill: Optional[BillData] = None
 
         self.setWindowTitle("Bill History")
@@ -49,6 +56,9 @@ class BillHistoryView(QDialog):
 
         self._setup_ui()
         self._connect_signals()
+        self._load_bills()
+
+    def refresh(self) -> None:
         self._load_bills()
 
     def _setup_ui(self) -> None:
@@ -105,6 +115,10 @@ class BillHistoryView(QDialog):
         self._bills_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._bills_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._bills_table.setSortingEnabled(True)
+        self._bills_table.horizontalHeader().setStretchLastSection(True)
+        self._bills_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._bills_table.setAlternatingRowColors(True)
+        self._bills_table.verticalHeader().setVisible(False)
         layout.addWidget(self._bills_table)
 
         action_layout = QHBoxLayout()
@@ -152,7 +166,7 @@ class BillHistoryView(QDialog):
             bill_number = bill.bill_number or str(bill.id)
             bill_date = bill.bill_datetime.strftime("%Y-%m-%d") if bill.bill_datetime else ""
             customer_name = bill.customer_name or f"#{bill.customer_id}"
-            total = f"?{float(bill.total or 0):.2f}"
+            total = format_money(Decimal(bill.total or 0), self._currency_symbol)
             payment = bill.payment_method or ""
             status = bill.payment_status or bill.status or ""
             whatsapp = bill.whatsapp_status or ""
@@ -185,41 +199,20 @@ class BillHistoryView(QDialog):
         pdf_path = bill.pdf_path
         if not pdf_path or not os.path.exists(pdf_path):
             pdf_path = self._billing_service.generate_receipt(bill.id)
-        if pdf_path and os.path.exists(pdf_path):
-            try:
-                os.startfile(pdf_path)
-            except Exception:
-                QMessageBox.information(self, "Receipt", f"Receipt saved at:\n{pdf_path}")
-        else:
-            QMessageBox.warning(self, "Receipt Not Found", "PDF receipt file not found.")
+        open_pdf(pdf_path, self)
 
     def _resend_whatsapp(self) -> None:
         bill = self._selected_bill
         if not bill:
             QMessageBox.warning(self, "No Bill Selected", "Please select a bill.")
             return
-        if not bill.customer_phone:
-            QMessageBox.warning(self, "Missing Phone", "Customer phone number is missing.")
-            return
-
-        pdf_path = bill.pdf_path
-        if not pdf_path or not os.path.exists(pdf_path):
-            pdf_path = self._billing_service.generate_receipt(bill.id)
-
-        result = self._notification_service.send_whatsapp_receipt(
-            phone_number=bill.customer_phone,
-            customer_name=bill.customer_name or "Customer",
-            total=f"{float(bill.total or 0):.2f}",
-            attachment_path=pdf_path,
+        send_whatsapp_receipt(
+            bill=bill,
+            billing_service=self._billing_service,
+            notification_service=self._notification_service,
+            parent=self,
         )
-        if result.success:
-            self._billing_service.update_whatsapp_status(bill.id, "Sent")
-            QMessageBox.information(self, "WhatsApp Sent", "Receipt sent successfully.")
-            self._load_bills()
-        else:
-            self._billing_service.update_whatsapp_status(bill.id, "Failed", result.error_message)
-            QMessageBox.warning(self, "WhatsApp Failed", result.error_message or "Send failed")
-            self._load_bills()
+        self._load_bills()
 
     def _print_pdf(self) -> None:
         bill = self._selected_bill

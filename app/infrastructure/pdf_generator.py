@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from reportlab.lib import colors
@@ -28,7 +29,11 @@ except Exception:
     DEFAULT_FONT = "Helvetica"
 
 
-def generate_receipt_pdf(receipt: ReceiptData, settings_service: SettingsService) -> str:
+def generate_receipt_pdf(
+    receipt: ReceiptData,
+    settings_service: SettingsService,
+    is_preview: bool = False,
+) -> str:
     """Generate a PDF receipt for the given receipt data and return the path."""
     if not os.path.exists(RECEIPTS_DIR):
         os.makedirs(RECEIPTS_DIR)
@@ -68,14 +73,18 @@ def generate_receipt_pdf(receipt: ReceiptData, settings_service: SettingsService
 
     story = []
 
-    salon_name = settings_service.get_setting("salon_name", "Your Salon")
-    salon_address = settings_service.get_setting("salon_address", "123 Salon St.")
-    salon_phone = settings_service.get_setting("salon_phone", "555-1234")
-    instagram = settings_service.get_setting("salon_instagram", "")
-    gstin = settings_service.get_setting("salon_gstin", "")
-    story.append(Paragraph(salon_name, h1))
-    story.append(Paragraph(salon_address, normal))
-    story.append(Paragraph(f"Phone: {salon_phone}", normal))
+    if is_preview:
+        story.append(Paragraph("PREVIEW - NOT A RECEIPT", h3))
+        story.append(Spacer(1, 8))
+
+    business_name = settings_service.get_setting("business_name", "Your Business")
+    business_address = settings_service.get_setting("business_address", "123 Business St.")
+    business_phone = settings_service.get_setting("business_phone", "555-1234")
+    instagram = settings_service.get_setting("business_instagram", "")
+    gstin = settings_service.get_setting("business_gstin", "")
+    story.append(Paragraph(business_name, h1))
+    story.append(Paragraph(business_address, normal))
+    story.append(Paragraph(f"Phone: {business_phone}", normal))
     if instagram:
         story.append(Paragraph(f"Instagram: {instagram}", normal))
     if gstin:
@@ -98,7 +107,12 @@ def generate_receipt_pdf(receipt: ReceiptData, settings_service: SettingsService
     story.append(Paragraph(f"Phone: {receipt.customer_phone}", normal))
     story.append(Spacer(1, 12))
 
-    currency_symbol = "?" if DEFAULT_FONT == "DejaVuSans" else "Rs."
+    currency_symbol = settings_service.get_setting("currency_symbol", "?") or "?"
+
+    def _money(value: Decimal | None) -> str:
+        amount = value if value is not None else Decimal("0")
+        return f"{currency_symbol}{amount:,.2f}"
+
     data = [["Service", "Qty", "Price", "Total"]]
     for item in receipt.items:
         svc_name = item.display_name or item.service_name
@@ -108,8 +122,8 @@ def generate_receipt_pdf(receipt: ReceiptData, settings_service: SettingsService
             [
                 svc_name,
                 str(item.quantity),
-                f"{currency_symbol}{float(item.unit_price):.0f}",
-                f"{currency_symbol}{float(item.line_total):.0f}",
+                _money(item.unit_price),
+                _money(item.line_total),
             ]
         )
 
@@ -132,21 +146,21 @@ def generate_receipt_pdf(receipt: ReceiptData, settings_service: SettingsService
     story.append(table)
     story.append(Spacer(1, 12))
 
-    story.append(Paragraph(f"Subtotal: {currency_symbol}{float(receipt.subtotal or 0):.0f}", normal))
-    if float(receipt.discount_amount or 0) > 0:
+    story.append(Paragraph(f"Subtotal: {_money(receipt.subtotal)}", normal))
+    if (receipt.discount_amount or Decimal("0")) > Decimal("0"):
         story.append(
             Paragraph(
-                f"Discount: -{currency_symbol}{float(receipt.discount_amount):.0f}",
+                f"Discount: -{_money(receipt.discount_amount)}",
                 normal,
             )
         )
     story.append(
         Paragraph(
-            f"Tax ({float(receipt.tax_percent or 0):.0f}%): {currency_symbol}{float(receipt.tax_amount or 0):.0f}",
+            f"Tax ({(receipt.tax_percent or Decimal('0')):.0f}%): {_money(receipt.tax_amount)}",
             normal,
         )
     )
-    story.append(Paragraph(f"TOTAL: {currency_symbol}{float(receipt.total or 0):.0f}", h3))
+    story.append(Paragraph(f"TOTAL: {_money(receipt.total)}", h3))
     story.append(Spacer(1, 12))
 
     story.append(Paragraph(f"Served By: {receipt.staff_name}", normal))

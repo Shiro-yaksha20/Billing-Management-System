@@ -1,12 +1,18 @@
 """Application-wide constants and configuration defaults."""
+
+from __future__ import annotations
+
 from pathlib import Path
 
+# Resolve all paths relative to the project root
+APP_DIR = Path(__file__).resolve().parent.parent
+
 # Paths
-DATABASE_FILE = "salon_billing.db"
+DATABASE_FILE = str(APP_DIR / "billing.db")
 DATABASE_URL = f"sqlite:///{DATABASE_FILE}"
-RECEIPTS_DIR = "receipts"
-LOGS_DIR = "logs"
-BACKUP_DIR = Path("backups")
+RECEIPTS_DIR = str(APP_DIR / "receipts")
+LOGS_DIR = str(APP_DIR / "logs")
+BACKUP_DIR = APP_DIR / "backups"
 
 # Business rules
 MAX_IMPORT_ERRORS = 10

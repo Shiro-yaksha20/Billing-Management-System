@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     Numeric,
     Enum,
+    Index,
 )
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
@@ -60,6 +61,10 @@ class Customer(Base, TimestampMixin):
     """Customer record."""
 
     __tablename__ = "customer"
+    __table_args__ = (
+        Index("ix_customer_phone", "phone"),
+        Index("ix_customer_name", "name"),
+    )
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     phone = Column(String, nullable=False)
@@ -73,6 +78,11 @@ class Bill(Base, TimestampMixin):
     """Bill header record."""
 
     __tablename__ = "bill"
+    __table_args__ = (
+        Index("ix_bill_datetime", "bill_datetime"),
+        Index("ix_bill_customer_id", "customer_id"),
+        Index("ix_bill_payment_status", "payment_status"),
+    )
     id = Column(Integer, primary_key=True)
     bill_number = Column(String, unique=True)
     customer_id = Column(Integer, ForeignKey("customer.id"), nullable=False)
