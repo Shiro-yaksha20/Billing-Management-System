@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Iterable, List, Optional
+from typing import List, Optional
 
 from ..csv_service_importer import export_services_to_csv, import_services_from_csv
 from ..dto.service_dto import ServiceData

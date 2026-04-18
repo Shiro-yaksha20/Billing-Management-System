@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from app.infrastructure.crypto import decrypt_file, derive_key, encrypt_file
 
 

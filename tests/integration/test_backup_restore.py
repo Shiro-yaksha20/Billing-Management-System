@@ -58,7 +58,7 @@ def test_list_backups_returns_sorted(temp_db, backup_paths):
     """Backups should be listed newest-first."""
     service = BackupService()
     first = service.create_backup(reason="first")
-    second = service.create_backup(reason="second")
+    service.create_backup(reason="second")
 
     os.utime(first.path, (1, 1))
 

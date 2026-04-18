@@ -24,7 +24,7 @@ class ServiceRepository(BaseRepository[Service]):
         with self._session_factory() as db:
             return (
                 db.query(Service)
-                .filter(Service.active == True)
+                .filter(Service.active.is_(True))
                 .order_by(Service.category, Service.display_name)
                 .all()
             )
@@ -33,7 +33,7 @@ class ServiceRepository(BaseRepository[Service]):
         with self._session_factory() as db:
             return (
                 db.query(Service)
-                .filter(Service.active == True, Service.category == category)
+                .filter(Service.active.is_(True), Service.category == category)
                 .order_by(Service.display_name)
                 .all()
             )
@@ -77,7 +77,7 @@ class ServiceRepository(BaseRepository[Service]):
         with self._session_factory() as db:
             query = db.query(Service)
             if active_only:
-                query = query.filter(Service.active == True)
+                query = query.filter(Service.active.is_(True))
             return query.order_by(Service.category, Service.name, Service.variant).all()
 
     def deactivate_all(self, db: Session | None = None) -> int:

@@ -9,7 +9,6 @@ from app.infrastructure import database as infra_db
 from app.models import Customer, Service, Staff
 from app.repositories.bill_repository import BillRepository
 from app.repositories.customer_repository import CustomerRepository
-from app.repositories.service_repository import ServiceRepository
 from app.repositories.settings_repository import SettingsRepository
 from app.repositories.staff_repository import StaffRepository
 from app.services.billing_service import BillingService

@@ -21,7 +21,7 @@ class StaffRepository(BaseRepository[Staff]):
 
     def list_active(self) -> Iterable[Staff]:
         with self._session_factory() as db:
-            return db.query(Staff).filter(Staff.active == True).order_by(Staff.name).all()
+            return db.query(Staff).filter(Staff.active.is_(True)).order_by(Staff.name).all()
 
     def update_staff(
         self,

@@ -20,7 +20,7 @@ def send_whatsapp_message(
     attachment_path: Optional[str] = None,
 ):
     """Send a WhatsApp message with optional attachment.
-    
+
     Args:
         to_number: The recipient phone number.
         message: The message body or caption.

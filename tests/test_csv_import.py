@@ -7,23 +7,20 @@ This script:
 3. Verifies the import was successful
 """
 
-import sys
 from pathlib import Path
+import traceback
 
 import pytest
 from sqlalchemy import func
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from app.migrate_service_schema import migrate_service_table
 from app.csv_service_importer import import_services_from_csv
 from app.infrastructure.database import db_session, init_db
+from app.migrate_service_schema import migrate_service_table
 from app.models import Service
 from app.repositories.service_repository import ServiceRepository
 
 
-def test_import():
+def test_import() -> None:
     """Test the CSV import process."""
     print("=" * 60)
     print("Step 1: Running database migration...")
@@ -56,7 +53,7 @@ def test_import():
             break
 
     if not csv_path:
-        print(f"? CSV file not found in any of these locations:")
+        print("? CSV file not found in any of these locations:")
         for path in possible_paths:
             print(f"  - {path}")
         print("\nPlease copy services_full_seed.csv to one of the above locations.")
@@ -91,8 +88,6 @@ def test_import():
 
     except Exception as e:
         print(f"? Import failed: {e}\n")
-        import traceback
-
         traceback.print_exc()
         pytest.fail(f"Import failed: {e}")
 
@@ -104,7 +99,7 @@ def test_import():
         with db_session() as db:
             # Count total services
             total = db.query(Service).count()
-            active = db.query(Service).filter(Service.active == True).count()
+            active = db.query(Service).filter(Service.active.is_(True)).count()
 
             print(f"Total services in database: {total}")
             print(f"Active services: {active}")
@@ -123,7 +118,7 @@ def test_import():
             # Show sample services
             print("\nSample services:")
             print("-" * 60)
-            samples = db.query(Service).filter(Service.active == True).limit(10).all()
+            samples = db.query(Service).filter(Service.active.is_(True)).limit(10).all()
             for s in samples:
                 variant = f" ({s.variant})" if s.variant else ""
                 price = f"?{s.price}" if s.price else "No price"
@@ -133,8 +128,6 @@ def test_import():
 
     except Exception as e:
         print(f"? Verification failed: {e}")
-        import traceback
-
         traceback.print_exc()
         pytest.fail(f"Verification failed: {e}")
 

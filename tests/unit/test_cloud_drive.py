@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import builtins
 from pathlib import Path
 from types import ModuleType
 import sys
@@ -173,7 +174,14 @@ def test_cloud_drive_list_backups_failure(monkeypatch, tmp_path):
 def test_cloud_drive_get_service_missing_dependency(monkeypatch):
     adapter = CloudDriveAdapter()
 
-    monkeypatch.delitem(sys.modules, "googleapiclient.discovery", raising=False)
+    original_import = builtins.__import__
+
+    def _import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "googleapiclient.discovery":
+            raise ModuleNotFoundError("missing discovery")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _import)
 
     with pytest.raises(ModuleNotFoundError):
         adapter._get_service()
@@ -193,7 +201,14 @@ def test_cloud_drive_load_credentials_missing_file(monkeypatch, tmp_path):
 def test_cloud_drive_load_credentials_missing_module(monkeypatch):
     adapter = CloudDriveAdapter()
 
-    monkeypatch.delitem(sys.modules, "google.auth.transport.requests", raising=False)
+    original_import = builtins.__import__
+
+    def _import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "google.auth.transport.requests":
+            raise ModuleNotFoundError("missing requests")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _import)
 
     with pytest.raises(ModuleNotFoundError):
         adapter._load_credentials()
@@ -234,7 +249,10 @@ def test_cloud_drive_keyring_token_fallback(monkeypatch, tmp_path):
     adapter = CloudDriveAdapter(credentials_path=str(credentials_path), token_path=str(token_path))
 
     monkeypatch.setattr("keyring.get_password", lambda *args, **kwargs: None)
-    monkeypatch.setattr("keyring.set_password", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("no backend")))
+    monkeypatch.setattr(
+        "keyring.set_password",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("no backend")),
+    )
 
     creds = adapter._load_credentials()
 

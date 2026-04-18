@@ -28,7 +28,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..constants import BACKUP_DIR
-from ..exceptions.business_errors import InsufficientDataError, StaffNotFoundError
+from ..exceptions.business_errors import StaffNotFoundError
 from ..services.backup_service import BackupService
 from ..services.restore_service import RestoreService
 from ..services.service_catalog import ServiceCatalog
@@ -123,6 +123,8 @@ class SettingsView(QWidget):
         self.business_name_input = QLineEdit()
         self.business_address_input = QTextEdit()
         self.business_phone_input = QLineEdit()
+        phone_regex = QRegularExpression(r"^\+?[0-9\-\s\(\)]{7,20}$")
+        self.business_phone_input.setValidator(QRegularExpressionValidator(phone_regex, self))
         self.business_gstin_input = QLineEdit()
         self.default_tax_percent_input = QLineEdit()
         self.default_tax_percent_input.setValidator(QDoubleValidator(0.0, 100.0, 2, self))
@@ -296,7 +298,11 @@ class SettingsView(QWidget):
     def toggle_staff_active(self) -> None:
         selected_row = self.staff_table.currentRow()
         if selected_row < 0:
-            QMessageBox.warning(self, "No Staff Selected", "Please select a staff member to toggle their active status.")
+            QMessageBox.warning(
+                self,
+                "No Staff Selected",
+                "Please select a staff member to toggle their active status.",
+            )
             return
 
         item = self.staff_table.item(selected_row, 0)
@@ -609,7 +615,8 @@ class SettingsView(QWidget):
         self.whatsapp_message_template_input.setPlainText(
             self._settings_service.get_setting(
                 "whatsapp_message_template",
-                "Hi {customer_name}, thank you for visiting {business_name}. Your bill total is {currency_symbol}{total}. Your receipt is attached.",
+                "Hi {customer_name}, thank you for visiting {business_name}. "
+                "Your bill total is {currency_symbol}{total}. Your receipt is attached.",
             )
         )
         if self._settings_service.get_secret("whatsapp_api_token"):

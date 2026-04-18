@@ -43,7 +43,8 @@ class BackupService:
                 raise ValueError("Password required for encrypted backups")
             if not self._is_strong_password(password):
                 raise ValueError(
-                    "Password must be at least 8 characters and include uppercase, lowercase, number, and special character"
+                    "Password must be at least 8 characters and include uppercase, "
+                    "lowercase, number, and special character"
                 )
             encrypted_path = backup_file.with_suffix(backup_file.suffix + ".enc")
             if not encrypt_file(str(backup_file), str(encrypted_path), password):

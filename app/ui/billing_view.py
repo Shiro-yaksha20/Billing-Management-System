@@ -568,11 +568,9 @@ class BillingView(QWidget):
             discount_value = Decimal(self.discount_input.text() or "0")
             if self.discount_type_combo.currentIndex() == 0:
                 discount_amount = min(discount_value, subtotal)
-                discount_type = "flat"
             else:
                 capped_percent = min(discount_value, Decimal("100"))
                 discount_amount = subtotal * (capped_percent / Decimal("100"))
-                discount_type = "percent"
 
             taxable_total = subtotal - discount_amount
             tax_percent = Decimal(self.tax_input.text() or "0")

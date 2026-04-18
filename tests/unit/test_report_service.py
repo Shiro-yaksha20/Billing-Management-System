@@ -138,7 +138,18 @@ def test_export_bills_handles_save_failure(temp_db, tmp_path, monkeypatch) -> No
 
     class _FailWorkbook:
         def __init__(self):
-            self.active = type("Sheet", (), {"title": "Bills Export", "cell": lambda *args, **kwargs: type("Cell", (), {"font": None, "alignment": None})()})()
+            def cell_factory(*args, **kwargs):
+                return type(
+                    "Cell",
+                    (),
+                    {"font": None, "alignment": None},
+                )()
+
+            self.active = type(
+                "Sheet",
+                (),
+                {"title": "Bills Export", "cell": cell_factory},
+            )()
 
         def save(self, path):
             raise RuntimeError("fail")

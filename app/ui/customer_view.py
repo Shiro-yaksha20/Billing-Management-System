@@ -9,7 +9,6 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHeaderView,
     QHBoxLayout,
-    QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,

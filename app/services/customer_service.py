@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from decimal import Decimal
-from typing import Iterable, List
+from typing import List
 
 from ..dto.bill_dto import BillData
 from ..dto.converters import bill_to_dto

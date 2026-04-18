@@ -27,4 +27,3 @@ class DiscountExceedsSubtotalError(ValidationError):
 
 class NegativeTotalError(ValidationError):
     """Raised when a calculated total is negative."""
-

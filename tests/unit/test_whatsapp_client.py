@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import requests
 
 from app.infrastructure.whatsapp_client import send_whatsapp_message

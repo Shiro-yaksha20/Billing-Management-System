@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pytest
 

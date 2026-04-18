@@ -104,7 +104,8 @@ class CloudDriveAdapter:
             from googleapiclient.discovery import build
         except ModuleNotFoundError as exc:
             raise ModuleNotFoundError(
-                "Google Drive dependencies are not installed. Install google-api-python-client and google-auth-oauthlib."
+                "Google Drive dependencies are not installed. "
+                "Install google-api-python-client and google-auth-oauthlib."
             ) from exc
 
         creds = self._load_credentials()
@@ -118,7 +119,8 @@ class CloudDriveAdapter:
             from google_auth_oauthlib.flow import InstalledAppFlow
         except ModuleNotFoundError as exc:
             raise ModuleNotFoundError(
-                "Google Drive dependencies are not installed. Install google-api-python-client and google-auth-oauthlib."
+                "Google Drive dependencies are not installed. "
+                "Install google-api-python-client and google-auth-oauthlib."
             ) from exc
 
         token_path = self._resolve_token_path()
