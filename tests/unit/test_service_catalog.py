@@ -35,6 +35,9 @@ class _StubServiceRepo:
         description: Optional[str],
         price: Optional[Decimal],
         duration_minutes: Optional[int],
+        category: Optional[str] = None,
+        variant: Optional[str] = None,
+        display_name: Optional[str] = None,
     ) -> Optional[Service]:
         if not self.service or self.service.id != service_id:
             return None
@@ -42,6 +45,9 @@ class _StubServiceRepo:
         self.service.description = description
         self.service.price = price
         self.service.duration_minutes = duration_minutes
+        self.service.category = category
+        self.service.variant = variant
+        self.service.display_name = display_name
         return self.service
 
     def toggle_active(self, service_id: int) -> bool:

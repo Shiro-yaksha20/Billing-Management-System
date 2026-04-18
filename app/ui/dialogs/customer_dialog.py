@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 
 from ...dto.customer_dto import CustomerData
 from ...exceptions.business_errors import CustomerNotFoundError, InsufficientDataError
+from ...exceptions.validation_errors import ValidationError
 from ...services.customer_service import CustomerService
 
 
@@ -67,7 +68,9 @@ class CustomerDialog(QDialog):
 
         button_box = QHBoxLayout()
         save_button = QPushButton("Save")
+        save_button.setObjectName("btn_primary")
         cancel_button = QPushButton("Cancel")
+        cancel_button.setObjectName("btn_secondary")
         button_box.addWidget(save_button)
         button_box.addWidget(cancel_button)
         main_layout.addLayout(button_box)
@@ -94,6 +97,9 @@ class CustomerDialog(QDialog):
                 self._customer_service.create_customer(name=name, phone=phone, notes=notes)
         except InsufficientDataError as exc:
             QMessageBox.warning(self, "Input Error", str(exc))
+            return
+        except ValidationError as exc:
+            QMessageBox.warning(self, "Validation Error", str(exc))
             return
         except CustomerNotFoundError:
             QMessageBox.critical(self, "Error", "Customer not found in database.")

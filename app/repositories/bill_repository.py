@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
-from datetime import datetime
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from typing import Callable, Iterable, Optional
 
@@ -117,6 +117,16 @@ class BillRepository(BaseRepository[Bill]):
             bill.pdf_path = pdf_path
             return True
 
+    def update_payment_status(self, bill_id: int, payment_status: str) -> bool:
+        """Update both bill status fields to keep legacy and new fields in sync."""
+        with self._session_factory() as db:
+            bill = db.query(Bill).filter(Bill.id == bill_id).first()
+            if not bill:
+                return False
+            bill.payment_status = payment_status
+            bill.status = payment_status
+            return True
+
     def get_with_details(self, bill_id: int) -> Bill | None:
         with self._session_factory() as db:
             return (
@@ -150,10 +160,13 @@ class BillRepository(BaseRepository[Bill]):
                 query = query.filter(Bill.customer_id == customer_id)
             return query.order_by(Bill.bill_datetime.desc()).all()
 
-    def get_daily_stats(self, target_date) -> dict:
+    def get_daily_stats(self, target_date: date) -> dict:
         """Get aggregated daily dashboard statistics via SQL."""
-        start = datetime.combine(target_date, datetime.min.time())
-        end = datetime.combine(target_date, datetime.max.time())
+        local_tz = datetime.now().astimezone().tzinfo or timezone.utc
+        local_start = datetime.combine(target_date, time.min, tzinfo=local_tz)
+        local_end = datetime.combine(target_date, time.max, tzinfo=local_tz)
+        start = local_start.astimezone(timezone.utc)
+        end = local_end.astimezone(timezone.utc)
 
         with self._session_factory() as db:
             result = db.execute(

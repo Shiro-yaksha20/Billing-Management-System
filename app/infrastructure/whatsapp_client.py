@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Optional, TYPE_CHECKING
 
 import requests
@@ -44,9 +45,10 @@ def send_whatsapp_message(
     try:
         if attachment_path:
             upload_url = f"https://graph.facebook.com/{api_version}/{phone_id}/media"
+            filename = os.path.basename(attachment_path)
             with open(attachment_path, "rb") as file:
                 files = {
-                    "file": (attachment_path.split("/")[-1], file, "application/pdf"),
+                    "file": (filename, file, "application/pdf"),
                     "messaging_product": (None, "whatsapp"),
                 }
                 upload_headers = {"Authorization": f"Bearer {token}"}
@@ -72,7 +74,7 @@ def send_whatsapp_message(
                 "type": "document",
                 "document": {
                     "id": media_id,
-                    "filename": attachment_path.split("/")[-1],
+                    "filename": filename,
                     "caption": message,
                 },
             }

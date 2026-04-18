@@ -60,6 +60,9 @@ class _StubBillRepo:
     def get_with_details(self, bill_id: int):
         return self.last_bill
 
+    def update_payment_status(self, bill_id: int, payment_status: str) -> bool:
+        return True
+
 
 class _StubCustomerRepo:
     def __init__(self, exists: bool = True) -> None:
@@ -373,6 +376,29 @@ def test_update_whatsapp_status_calls_repo() -> None:
 
     assert calls["bill_id"] == 1
     assert calls["status"] == "Sent"
+
+
+def test_cancel_bill_calls_repo() -> None:
+    calls = {}
+
+    class _StubRepo(_StubBillRepo):
+        def update_payment_status(self, bill_id: int, payment_status: str) -> bool:
+            calls["bill_id"] = bill_id
+            calls["payment_status"] = payment_status
+            return True
+
+    service = BillingService(
+        bill_repo=_StubRepo(),
+        customer_repo=_StubCustomerRepo(),
+        staff_repo=_StubStaffRepo(),
+        settings_service=_StubSettingsService(),
+    )
+
+    result = service.cancel_bill(1)
+
+    assert result is True
+    assert calls["bill_id"] == 1
+    assert calls["payment_status"] == "Cancelled"
 
 
 def test_calculate_discount_flat_valid_returns_amount() -> None:

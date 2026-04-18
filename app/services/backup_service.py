@@ -70,8 +70,8 @@ class BackupService:
             created_at = datetime.fromtimestamp(backup_file.stat().st_mtime)
             reason = "manual"
             parts = backup_file.stem.split("_")
-            if len(parts) >= 3:
-                reason = parts[2]
+            if len(parts) >= 4:
+                reason = "_".join(parts[3:]).replace(".db", "")
             backups.append(BackupInfo(path=str(backup_file), created_at=created_at, reason=reason))
         return backups
 

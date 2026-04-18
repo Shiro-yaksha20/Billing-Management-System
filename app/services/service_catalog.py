@@ -39,14 +39,31 @@ class ServiceCatalog:
         description: Optional[str],
         price: Optional[Decimal],
         duration_minutes: Optional[int],
+        category: Optional[str] = None,
+        variant: Optional[str] = None,
+        display_name: Optional[str] = None,
     ) -> ServiceData:
         if not name.strip():
             raise InsufficientDataError("Service name is required.")
+
+        normalized_name = name.strip()
+        normalized_variant = variant.strip() if variant else None
+        resolved_display_name = (display_name or "").strip()
+        if not resolved_display_name:
+            resolved_display_name = (
+                f"{normalized_name} ({normalized_variant})"
+                if normalized_variant
+                else normalized_name
+            )
+
         service = Service(
-            name=name.strip(),
+            name=normalized_name,
             description=description,
             price=price,
             duration_minutes=duration_minutes,
+            category=category.strip() if category else None,
+            variant=normalized_variant,
+            display_name=resolved_display_name,
             active=True,
         )
         created = self._service_repo.add(service)
@@ -59,13 +76,29 @@ class ServiceCatalog:
         description: Optional[str],
         price: Optional[Decimal],
         duration_minutes: Optional[int],
+        category: Optional[str] = None,
+        variant: Optional[str] = None,
+        display_name: Optional[str] = None,
     ) -> Optional[ServiceData]:
+        normalized_name = name.strip()
+        normalized_variant = variant.strip() if variant else None
+        resolved_display_name = (display_name or "").strip()
+        if not resolved_display_name:
+            resolved_display_name = (
+                f"{normalized_name} ({normalized_variant})"
+                if normalized_variant
+                else normalized_name
+            )
+
         service = self._service_repo.update_service(
             service_id,
-            name.strip(),
+            normalized_name,
             description,
             price,
             duration_minutes,
+            category.strip() if category else None,
+            normalized_variant,
+            resolved_display_name,
         )
         if not service:
             return None

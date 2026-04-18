@@ -116,9 +116,11 @@ def test_bill_repository_updates(temp_db) -> None:
     assert repo.update_bill_number(9999, "X") is False
     assert repo.update_whatsapp_status(9999, "Sent") is False
     assert repo.update_pdf_path(9999, "path.pdf") is False
+    assert repo.update_payment_status(9999, "Cancelled") is False
     assert repo.update_bill_number(bill_id, "B2") is True
     assert repo.update_whatsapp_status(bill_id, "Sent", "") is True
     assert repo.update_pdf_path(bill_id, "path.pdf") is True
+    assert repo.update_payment_status(bill_id, "Cancelled") is True
     assert repo.get_with_details(bill_id) is not None
 
 

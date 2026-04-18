@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.1] - 2026-04-18
+
+### Added
+- Bill status synchronization migration (`app/migrate_bill_status_sync.py`) and startup execution hook.
+- Final manual verification artifact (`docs/FINAL_MANUAL_VERIFICATION_REPORT.md`).
+
+### Changed
+- Moved bill timestamp defaults to UTC-aware model defaults and UTC-aware bill creation in service flow.
+- Updated daily dashboard statistics query to convert local day boundaries to UTC before filtering.
+- Added synchronized payment-status update path in `BillRepository` and cancellation operation in `BillingService`.
+- Extended semantic button hierarchy styling and object-name usage across major views/dialogs.
+- Added dashboard stat-card elevation using drop-shadow effects.
+
+### Fixed
+- Remaining settings currency fallback paths now default to `?`.
+- Remaining Windows-only PDF print/open path in bill history now has cross-platform fallbacks.
+
 ## [2.1.0] - 2026-04-16
 
 ### Added

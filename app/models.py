@@ -16,7 +16,6 @@ from sqlalchemy import (
     Index,
 )
 from sqlalchemy.orm import relationship, declarative_base
-from sqlalchemy.sql import func
 
 Base = declarative_base()
 
@@ -24,8 +23,15 @@ Base = declarative_base()
 class TimestampMixin:
     """Mixin for created/updated timestamps."""
 
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.datetime.now(datetime.timezone.utc),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.datetime.now(datetime.timezone.utc),
+        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc),
+    )
 
 
 class Staff(Base, TimestampMixin):
@@ -87,7 +93,10 @@ class Bill(Base, TimestampMixin):
     bill_number = Column(String, unique=True)
     customer_id = Column(Integer, ForeignKey("customer.id"), nullable=False)
     staff_id = Column(Integer, ForeignKey("staff.id"), nullable=False)
-    bill_datetime = Column(DateTime, default=datetime.datetime.utcnow)
+    bill_datetime = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.datetime.now(datetime.timezone.utc),
+    )
     subtotal = Column(Numeric(10, 2))
     discount_amount = Column(Numeric(10, 2), default=0)
     discount_type = Column(Enum("flat", "percent", "none", name="discount_type_enum"), default="none")
@@ -95,12 +104,13 @@ class Bill(Base, TimestampMixin):
     tax_percent = Column(Numeric(5, 2))
     total = Column(Numeric(10, 2), nullable=False)
     payment_method = Column(Enum("Cash", "UPI", "Card", "Other", name="payment_method_enum"), default="Cash")
+    # `Cancelled` is retained for backward compatibility until cancellation UI is implemented.
     status = Column(Enum("Paid", "Pending", "Cancelled", name="status_enum"), default="Paid")
     pdf_path = Column(String)
     whatsapp_status = Column(Enum("Not Sent", "Sent", "Failed", name="whatsapp_status_enum"), default="Not Sent")
     whatsapp_last_error = Column(Text)
     transaction_id = Column(String)  # UPI/Card transaction reference
-    payment_status = Column(String, default="Paid")  # Redundant with status enum, used for receipt display
+    payment_status = Column(String, default="Paid")
 
     customer = relationship("Customer", back_populates="bills")
     staff = relationship("Staff", back_populates="bills")

@@ -73,8 +73,10 @@ class ExportView(QWidget):
 
         buttons = QHBoxLayout()
         export_btn = QPushButton("Export")
+        export_btn.setObjectName("btn_primary")
         export_btn.clicked.connect(self.do_export)
         cancel_btn = QPushButton("Reset")
+        cancel_btn.setObjectName("btn_secondary")
         cancel_btn.clicked.connect(self._reset_filters)
         buttons.addWidget(export_btn)
         buttons.addWidget(cancel_btn)

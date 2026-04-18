@@ -5,8 +5,10 @@ from __future__ import annotations
 from decimal import Decimal
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtGui import QColor, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
+    QGraphicsDropShadowEffect,
+    QGridLayout,
     QGroupBox,
     QHeaderView,
     QHBoxLayout,
@@ -14,6 +16,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QMainWindow,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -63,11 +66,12 @@ class MainWindow(QMainWindow):
         self._notification_service = notification_service
         self._backup_service = backup_service
         self._restore_service = restore_service
-        self._currency_symbol = self._settings_service.get_setting("currency_symbol", "?") or "?"
+        self._currency_symbol = self._settings_service.get_setting("currency_symbol", "₹") or "₹"
 
         business_name = self._settings_service.get_setting("business_name", "Billing System")
         self.setWindowTitle(f"{business_name} - Billing")
-        self.setGeometry(100, 100, 900, 650)
+        self.setMinimumSize(800, 600)
+        self.resize(1024, 768)
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -75,6 +79,8 @@ class MainWindow(QMainWindow):
 
         self._nav_list = QListWidget()
         self._nav_list.setObjectName("nav_sidebar")
+        self._nav_list.setMinimumWidth(120)
+        self._nav_list.setMaximumWidth(180)
         self._nav_list.addItems(
             ["Dashboard", "New Bill", "Customers", "Bill History", "Export", "Settings"]
         )
@@ -87,7 +93,13 @@ class MainWindow(QMainWindow):
 
         self._dashboard_page = QWidget()
         self._dashboard_page.setObjectName("dashboard_page")
-        dashboard_layout = QVBoxLayout(self._dashboard_page)
+        dashboard_page_layout = QVBoxLayout(self._dashboard_page)
+        dashboard_scroll = QScrollArea()
+        dashboard_scroll.setWidgetResizable(True)
+        dashboard_content = QWidget()
+        dashboard_layout = QVBoxLayout(dashboard_content)
+        dashboard_scroll.setWidget(dashboard_content)
+        dashboard_page_layout.addWidget(dashboard_scroll)
 
         dashboard_title = QLabel("Dashboard")
         dashboard_title.setObjectName("page_title")
@@ -96,7 +108,7 @@ class MainWindow(QMainWindow):
         self._dashboard_group = QGroupBox("Dashboard")
         dashboard_group_layout = QVBoxLayout()
 
-        stats_layout = QHBoxLayout()
+        stats_layout = QGridLayout()
         sales_card, self._today_sales_value = self._create_stat_card(
             "Today's Sales",
             format_money(Decimal("0"), self._currency_symbol),
@@ -128,11 +140,11 @@ class MainWindow(QMainWindow):
             "customers_card",
         )
 
-        stats_layout.addWidget(sales_card)
-        stats_layout.addWidget(bills_card)
-        stats_layout.addWidget(pending_card)
-        stats_layout.addWidget(pending_count_card)
-        stats_layout.addWidget(customers_card)
+        stats_layout.addWidget(sales_card, 0, 0)
+        stats_layout.addWidget(bills_card, 0, 1)
+        stats_layout.addWidget(pending_card, 0, 2)
+        stats_layout.addWidget(pending_count_card, 1, 0)
+        stats_layout.addWidget(customers_card, 1, 1)
         dashboard_group_layout.addLayout(stats_layout)
 
         recent_group = QGroupBox("Recent Bills")
@@ -152,11 +164,11 @@ class MainWindow(QMainWindow):
 
         quick_actions = QGroupBox("Quick Actions")
         quick_layout = QHBoxLayout()
-        new_bill_button = QPushButton("?? New Bill", clicked=lambda: self._nav_list.setCurrentRow(1))
+        new_bill_button = QPushButton("New Bill", clicked=lambda: self._nav_list.setCurrentRow(1))
         new_bill_button.setObjectName("quick_new_bill")
-        customers_button = QPushButton("?? Customers", clicked=lambda: self._nav_list.setCurrentRow(2))
+        customers_button = QPushButton("Customers", clicked=lambda: self._nav_list.setCurrentRow(2))
         customers_button.setObjectName("quick_customers")
-        export_button = QPushButton("?? Export", clicked=lambda: self._nav_list.setCurrentRow(4))
+        export_button = QPushButton("Export", clicked=lambda: self._nav_list.setCurrentRow(4))
         export_button.setObjectName("quick_export")
         quick_layout.addWidget(new_bill_button)
         quick_layout.addWidget(customers_button)
@@ -266,6 +278,12 @@ class MainWindow(QMainWindow):
         value_label.setObjectName(f"{object_name}_value")
         value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(value_label)
+
+        shadow = QGraphicsDropShadowEffect(card)
+        shadow.setBlurRadius(18)
+        shadow.setOffset(0, 4)
+        shadow.setColor(QColor(0, 0, 0, 110))
+        card.setGraphicsEffect(shadow)
         return card, value_label
 
     def showEvent(self, event) -> None:
@@ -277,6 +295,9 @@ class MainWindow(QMainWindow):
             stats = self._billing_service.get_dashboard_stats()
         except Exception:
             return
+
+        sort_section = self._recent_table.horizontalHeader().sortIndicatorSection()
+        sort_order = self._recent_table.horizontalHeader().sortIndicatorOrder()
 
         self._today_sales_value.setText(format_money(Decimal(stats.today_sales), self._currency_symbol))
         self._today_bills_value.setText(str(stats.today_bills_count))
@@ -298,6 +319,8 @@ class MainWindow(QMainWindow):
             self._recent_table.setItem(row, 2, QTableWidgetItem(bill_date))
             self._recent_table.setItem(row, 3, QTableWidgetItem(total))
             self._recent_table.setItem(row, 4, QTableWidgetItem(status))
+
+        self._recent_table.sortItems(sort_section, sort_order)
 
     def open_settings_window(self) -> None:
         self._nav_list.setCurrentRow(5)

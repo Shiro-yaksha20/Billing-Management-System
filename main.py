@@ -1,4 +1,9 @@
 import sys
+from __future__ import annotations
+
+import sys
+
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QApplication
 from app.infrastructure.database import init_db, db_session
 from app.repositories import (
@@ -36,12 +41,15 @@ def main():
         init_db()
         try:
             from app.migrate_service_schema import migrate_service_table
+            from app.migrate_bill_status_sync import migrate as migrate_bill_status_sync
 
             migrate_service_table()
+            migrate_bill_status_sync()
         except Exception as migration_error:
             logger.error(f"Database migration failed: {migration_error}")
 
         app = QApplication(sys.argv)
+        app.setFont(QFont("Segoe UI", 10))
         apply_theme(app)
 
         session_factory = db_session
@@ -57,7 +65,7 @@ def main():
         customer_service = CustomerService(customer_repo, bill_repo)
         staff_service = StaffService(staff_repo)
         service_catalog = ServiceCatalog(service_repo)
-        report_service = ReportService(bill_repo)
+        report_service = ReportService(bill_repo, settings_service)
         restore_service = RestoreService()
 
         main_window = MainWindow(

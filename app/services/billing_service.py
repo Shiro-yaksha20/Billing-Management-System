@@ -99,6 +99,7 @@ class BillingService:
             tax_percent=options.tax_percent,
             total=total,
             payment_method=options.payment_method,
+            status=options.payment_status,
             transaction_id=options.transaction_id,
             payment_status=options.payment_status,
         )
@@ -213,6 +214,10 @@ class BillingService:
     def update_whatsapp_status(self, bill_id: int, status: str, error: str | None = None) -> None:
         """Update WhatsApp status for a bill."""
         self._bill_repo.update_whatsapp_status(bill_id, status, error)
+
+    def cancel_bill(self, bill_id: int) -> bool:
+        """Mark a bill as cancelled in both legacy and primary status fields."""
+        return self._bill_repo.update_payment_status(bill_id, "Cancelled")
 
     def _generate_bill_number(self, bill: Bill) -> str:
         prefix = self._settings_service.get_setting("bill_number_prefix", "INV") or "INV"

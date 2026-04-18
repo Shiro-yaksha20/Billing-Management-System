@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QDoubleValidator, QIntValidator, QKeySequence, QShortcut
+from PyQt6.QtGui import QDoubleValidator, QIntValidator, QKeySequence, QShortcut, QValidator
 from PyQt6.QtWidgets import (
     QComboBox,
     QFormLayout,
@@ -63,10 +63,10 @@ class BillingView(QWidget):
         self._service_catalog = service_catalog
         self._notification_service = notification_service
         self._settings_service = settings_service
-        self._currency_symbol = self._settings_service.get_setting("currency_symbol", "?") or "?"
+        self._currency_symbol = self._settings_service.get_setting("currency_symbol", "₹") or "₹"
 
         self.setWindowTitle("New Bill")
-        self.setMinimumWidth(900)
+        self.setMinimumWidth(600)
 
         self.selected_customer: CustomerData | None = None
         self.all_services: list[ServiceData] = []
@@ -77,6 +77,8 @@ class BillingView(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         left_widget = QWidget()
         right_widget = QWidget()
+        left_widget.setMinimumWidth(360)
+        right_widget.setMinimumWidth(260)
         left_panel = QVBoxLayout(left_widget)
         right_panel = QVBoxLayout(right_widget)
         splitter.addWidget(left_widget)
@@ -94,9 +96,9 @@ class BillingView(QWidget):
 
         progress_group = QGroupBox("Progress")
         progress_layout = QVBoxLayout()
-        self._customer_status_label = QLabel("Customer: ?")
-        self._services_status_label = QLabel("Services: ?")
-        self._payment_status_label = QLabel("Payment: ?")
+        self._customer_status_label = QLabel("Customer: Pending")
+        self._services_status_label = QLabel("Services: Pending")
+        self._payment_status_label = QLabel("Payment: Pending")
         self._ready_status_label = QLabel("")
         progress_layout.addWidget(self._customer_status_label)
         progress_layout.addWidget(self._services_status_label)
@@ -137,6 +139,7 @@ class BillingView(QWidget):
         self.services_table.setColumnCount(5)
         self.services_table.setHorizontalHeaderLabels(["Service", "Qty", "Price", "Total", "ID"])
         self.services_table.setColumnHidden(4, True)
+        self.services_table.setEditTriggers(QTableWidget.EditTrigger.AllEditTriggers)
         self.services_table.setSortingEnabled(True)
         self.services_table.horizontalHeader().setStretchLastSection(True)
         self.services_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -216,8 +219,11 @@ class BillingView(QWidget):
 
         action_button_layout = QHBoxLayout()
         self.preview_button = QPushButton("Preview")
+        self.preview_button.setObjectName("btn_secondary")
         self.save_bill_button = QPushButton("Save Bill")
+        self.save_bill_button.setObjectName("btn_primary")
         self.save_and_send_button = QPushButton("Save, PDF & Send")
+        self.save_and_send_button.setObjectName("btn_success")
         action_button_layout.addWidget(self.preview_button)
         action_button_layout.addWidget(self.save_bill_button)
         action_button_layout.addWidget(self.save_and_send_button)
@@ -277,8 +283,7 @@ class BillingView(QWidget):
     def populate_service_combo(self, services: list[ServiceData]) -> None:
         self.service_combo.blockSignals(True)
         try:
-            while self.service_combo.count() > 0:
-                self.service_combo.removeItem(0)
+            self.service_combo.clear()
             for service in services:
                 display_text = service.display_name or service.name or ""
                 price = service.price if service.price is not None else Decimal("0")
@@ -355,20 +360,33 @@ class BillingView(QWidget):
             QMessageBox.warning(self, "Error", "Service not found.")
             return
 
+        was_sorting_enabled = self.services_table.isSortingEnabled()
+        self.services_table.setSortingEnabled(False)
         self.services_table.blockSignals(True)
         try:
             row_position = self.services_table.rowCount()
             self.services_table.insertRow(row_position)
-            self.services_table.setItem(row_position, 0, QTableWidgetItem(service.name or ""))
+            service_item = QTableWidgetItem(service.name or "")
+            service_item.setFlags(service_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.services_table.setItem(row_position, 0, service_item)
+
             qty_item = QTableWidgetItem("1")
             qty_item.setData(Qt.ItemDataRole.UserRole, QIntValidator(1, 999, self))
             self.services_table.setItem(row_position, 1, qty_item)
+
             price = service.price if service.price is not None else Decimal("0")
-            self.services_table.setItem(row_position, 2, QTableWidgetItem(str(price)))
-            self.services_table.setItem(row_position, 3, QTableWidgetItem(str(price)))
-            self.services_table.setItem(row_position, 4, QTableWidgetItem(str(service.id)))
+            price_item = QTableWidgetItem(str(price))
+            total_item = QTableWidgetItem(str(price))
+            id_item = QTableWidgetItem(str(service.id))
+            price_item.setFlags(price_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            total_item.setFlags(total_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            id_item.setFlags(id_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.services_table.setItem(row_position, 2, price_item)
+            self.services_table.setItem(row_position, 3, total_item)
+            self.services_table.setItem(row_position, 4, id_item)
         finally:
             self.services_table.blockSignals(False)
+            self.services_table.setSortingEnabled(was_sorting_enabled)
         self.update_totals()
         self._update_progress_status()
 
@@ -384,13 +402,17 @@ class BillingView(QWidget):
             try:
                 if column == 1:
                     validator = self.services_table.item(row, 1).data(Qt.ItemDataRole.UserRole)
-                    if validator and not validator.validate(self.services_table.item(row, 1).text(), 0)[0]:
+                    if validator:
+                        state, _, _ = validator.validate(self.services_table.item(row, 1).text(), 0)
+                    else:
+                        state = QValidator.State.Acceptable
+                    if state != QValidator.State.Acceptable:
                         self.services_table.item(row, 1).setText("1")
                 qty = int(self.services_table.item(row, 1).text())
                 price = Decimal(self.services_table.item(row, 2).text())
                 line_total = qty * price
                 self.services_table.item(row, 3).setText(f"{line_total:.2f}")
-            except (ValueError, TypeError):
+            except (InvalidOperation, ValueError, TypeError):
                 pass
             self.update_totals()
             self._update_progress_status()
@@ -400,7 +422,7 @@ class BillingView(QWidget):
         for row in range(self.services_table.rowCount()):
             try:
                 subtotal += Decimal(self.services_table.item(row, 3).text())
-            except (ValueError, TypeError):
+            except (InvalidOperation, ValueError, TypeError):
                 pass
 
         self.subtotal_label.setText(format_money(subtotal, self._currency_symbol))
@@ -462,6 +484,7 @@ class BillingView(QWidget):
             return
 
         try:
+            self._sync_customer_notes()
             items = self._collect_items_from_table()
             options = BillOptions(
                 discount_type="flat" if self.discount_type_combo.currentIndex() == 0 else "percent",
@@ -489,6 +512,11 @@ class BillingView(QWidget):
         self._clear_form()
 
     def _clear_form(self) -> None:
+        self.selected_customer = None
+        self.customer_search_input.clear()
+        self.customer_name_label.setText("Name: ")
+        self.customer_phone_label.setText("Phone: ")
+        self.customer_notes_area.clear()
         self.services_table.setRowCount(0)
         self.discount_input.setText("0")
         self.transaction_id_input.clear()
@@ -496,6 +524,26 @@ class BillingView(QWidget):
         self.payment_status_combo.setCurrentText("Paid")
         self.update_totals()
         self._update_progress_status()
+
+    def _sync_customer_notes(self) -> None:
+        if not self.selected_customer:
+            return
+
+        updated_notes = self.customer_notes_area.toPlainText().strip() or None
+        if updated_notes == self.selected_customer.notes:
+            return
+
+        updated_customer = CustomerData(
+            id=self.selected_customer.id,
+            name=self.selected_customer.name,
+            phone=self.selected_customer.phone,
+            notes=updated_notes,
+            last_visit_at=self.selected_customer.last_visit_at,
+        )
+        self.selected_customer = self._customer_service.update_customer(
+            self.selected_customer.id,
+            updated_customer,
+        )
 
     def save_bill_and_send(self) -> None:
         self.save_bill(and_send=True)
@@ -609,9 +657,15 @@ class BillingView(QWidget):
         services_done = self.services_table.rowCount() > 0
         payment_done = bool(self.payment_method_combo.currentText())
 
-        self._customer_status_label.setText(f"Customer: {'?' if customer_done else '?'}")
-        self._services_status_label.setText(f"Services: {'?' if services_done else '?'}")
-        self._payment_status_label.setText(f"Payment: {'?' if payment_done else '?'}")
+        self._customer_status_label.setText(
+            f"Customer: {'Done' if customer_done else 'Pending'}"
+        )
+        self._services_status_label.setText(
+            f"Services: {'Done' if services_done else 'Pending'}"
+        )
+        self._payment_status_label.setText(
+            f"Payment: {'Done' if payment_done else 'Pending'}"
+        )
 
         if customer_done and services_done and payment_done:
             self._ready_status_label.setText("Ready to Save")

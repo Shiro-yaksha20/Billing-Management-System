@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QHBoxLayout,
     QInputDialog,
+    QLabel,
     QLineEdit,
     QListWidget,
     QMessageBox,
@@ -333,8 +334,13 @@ class SettingsView(QWidget):
         category_buttons.addWidget(add_category_button)
         category_buttons.addWidget(rename_category_button)
         category_buttons.addWidget(delete_category_button)
+        category_note = QLabel(
+            "Note: categories are derived from service records and persist only when used by services."
+        )
+        category_note.setWordWrap(True)
         category_layout.addWidget(self._category_list)
         category_layout.addLayout(category_buttons)
+        category_layout.addWidget(category_note)
         category_group.setLayout(category_layout)
         layout.addWidget(category_group)
 
