@@ -16,6 +16,10 @@ backup_services_*.csv
 venv/
 .venv/
 env/
+env1/
+
+# Database (all variants)
+billing.db
 
 # IDE specific files
 .idea/

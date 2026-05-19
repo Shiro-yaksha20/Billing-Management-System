@@ -51,7 +51,7 @@ def import_services_from_csv(
         return results
 
     try:
-        with service_repo._session_factory() as db:
+        with service_repo.session_context() as db:
             if clear_existing:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 backup_file = str(BACKUP_DIR / f"backup_services_{timestamp}.csv")
@@ -161,7 +161,7 @@ def export_services_to_csv(
         if not os.access(output_path.parent, os.W_OK):
             raise PermissionError(f"Cannot write to directory: {output_path.parent}")
 
-        services = service_repo.list_for_export(active_only=active_only)
+        services = list(service_repo.list_for_export(active_only=active_only))
         service_count = len(services)
 
         temp_file = str(output_path) + ".tmp"

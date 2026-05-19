@@ -35,6 +35,9 @@ class _StubServiceRepo:
         description: Optional[str],
         price: Optional[Decimal],
         duration_minutes: Optional[int],
+        category: Optional[str] = None,
+        variant: Optional[str] = None,
+        display_name: Optional[str] = None,
     ) -> Optional[Service]:
         if not self.service or self.service.id != service_id:
             return None
@@ -42,6 +45,9 @@ class _StubServiceRepo:
         self.service.description = description
         self.service.price = price
         self.service.duration_minutes = duration_minutes
+        self.service.category = category
+        self.service.variant = variant
+        self.service.display_name = display_name
         return self.service
 
     def toggle_active(self, service_id: int) -> bool:
@@ -57,11 +63,24 @@ def test_create_service_requires_name() -> None:
         catalog.create_service("", None, None, None)
 
 
+def test_create_service_whitespace_name_raises() -> None:
+    catalog = ServiceCatalog(_StubServiceRepo())
+    with pytest.raises(InsufficientDataError):
+        catalog.create_service("   ", None, None, None)
+
+
 def test_create_service_returns_data() -> None:
     catalog = ServiceCatalog(_StubServiceRepo())
     created = catalog.create_service("Cut", "", Decimal("10"), 30)
     assert created.id == 1
     assert created.active is True
+
+
+def test_create_service_accepts_negative_price() -> None:
+    catalog = ServiceCatalog(_StubServiceRepo())
+    created = catalog.create_service("Cut", "", Decimal("-5"), 30)
+
+    assert created.price == Decimal("-5")
 
 
 def test_update_service_missing_returns_none() -> None:
@@ -88,6 +107,15 @@ def test_list_active_returns_data() -> None:
 
     assert len(result) == 1
     assert result[0].id == 1
+
+
+def test_list_active_returns_empty_when_inactive() -> None:
+    service = Service(id=1, name="Cut", price=Decimal("10"), active=False)
+    catalog = ServiceCatalog(_StubServiceRepo(service=service))
+
+    result = catalog.list_active()
+
+    assert result == []
 
 
 def test_toggle_active_success() -> None:
@@ -154,6 +182,16 @@ def test_list_categories_returns_data() -> None:
     catalog = ServiceCatalog(_Repo())
 
     assert catalog.list_categories() == ["Hair"]
+
+
+def test_list_categories_returns_empty_list() -> None:
+    class _Repo(_StubServiceRepo):
+        def list_categories(self):
+            return []
+
+    catalog = ServiceCatalog(_Repo())
+
+    assert catalog.list_categories() == []
 
 
 def test_update_service_returns_data() -> None:

@@ -12,13 +12,23 @@ from app.services.settings_service import SettingsService
 @dataclass
 class _StubSettingsRepo:
     setting: Optional[Setting] = None
+    store: dict[str, Setting] | None = None
+
+    def __post_init__(self) -> None:
+        if self.store is None:
+            self.store = {}
 
     def get_by_key(self, key: str) -> Optional[Setting]:
-        return self.setting if self.setting and self.setting.key == key else None
+        if self.store is None:
+            return None
+        return self.store.get(key)
 
     def set_value(self, key: str, value: str | None) -> Setting:
-        self.setting = Setting(key=key, value=value)
-        return self.setting
+        setting = Setting(key=key, value=value)
+        if self.store is not None:
+            self.store[key] = setting
+        self.setting = setting
+        return setting
 
 
 def test_get_setting_returns_default_when_missing() -> None:
@@ -34,24 +44,70 @@ def test_set_setting_updates_value() -> None:
     assert repo.setting.value == "value"
 
 
-def test_set_setting_migrates_legacy_key_to_business_key() -> None:
+def test_get_setting_migrates_legacy_key() -> None:
+    repo = _StubSettingsRepo()
+    repo.set_value("salon_name", "Legacy Salon")
+    service = SettingsService(repo)
+
+    value = service.get_setting("business_name")
+
+    assert value == "Legacy Salon"
+    assert repo.get_by_key("business_name") is not None
+
+
+def test_get_setting_new_key_without_legacy() -> None:
+    repo = _StubSettingsRepo()
+    repo.set_value("custom_key", "Value")
+    service = SettingsService(repo)
+
+    assert service.get_setting("custom_key") == "Value"
+
+
+def test_set_setting_with_none_value() -> None:
     repo = _StubSettingsRepo()
     service = SettingsService(repo)
 
-    service.set_setting("salon_name", "Acme")
+    service.set_setting("business_tagline", None)
 
-    assert repo.setting is not None
-    assert repo.setting.key == "business_name"
-    assert repo.setting.value == "Acme"
+    assert repo.get_by_key("business_tagline") is not None
+    assert repo.get_by_key("business_tagline").value is None
 
 
-def test_get_setting_reads_legacy_key_via_business_alias() -> None:
-    repo = _StubSettingsRepo(setting=Setting(key="salon_name", value="Legacy Salon"))
+def test_set_setting_new_key_stores_directly() -> None:
+    repo = _StubSettingsRepo()
     service = SettingsService(repo)
 
-    result = service.get_setting("business_name", "default")
+    service.set_setting("custom_key", "Custom")
 
-    assert result == "Legacy Salon"
+    assert repo.get_by_key("custom_key").value == "Custom"
+
+
+def test_get_setting_fallbacks_to_legacy_key() -> None:
+    repo = _StubSettingsRepo()
+    repo.set_value("salon_phone", "999")
+    service = SettingsService(repo)
+
+    assert service.get_setting("business_phone") == "999"
+
+
+def test_set_setting_does_not_overwrite_migrated_key() -> None:
+    repo = _StubSettingsRepo()
+    repo.set_value("business_name", "New")
+    service = SettingsService(repo)
+
+    service.set_setting("salon_name", "Old")
+
+    assert repo.get_by_key("business_name").value == "New"
+
+
+def test_set_setting_overwrites_existing_value() -> None:
+    repo = _StubSettingsRepo()
+    service = SettingsService(repo)
+
+    service.set_setting("business_name", "First")
+    service.set_setting("business_name", "Second")
+
+    assert repo.get_by_key("business_name").value == "Second"
 
 
 def test_get_secret_returns_value(monkeypatch) -> None:

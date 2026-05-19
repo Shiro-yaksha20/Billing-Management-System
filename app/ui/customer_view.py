@@ -46,9 +46,12 @@ class CustomerView(QWidget):
         self._billing_service = billing_service
         self._notification_service = notification_service
         self._settings_service = settings_service
-        self._currency_symbol = self._settings_service.get_setting("currency_symbol", "?") or "?"
+        self._currency_symbol = self._settings_service.get_setting(
+            "currency_symbol",
+            "\u20B9",
+        ) or "\u20B9"
         self.setWindowTitle("Manage Customers")
-        self.setMinimumWidth(800)
+        self.setMinimumWidth(600)
 
         self._main_layout = QVBoxLayout(self)
 
@@ -89,8 +92,10 @@ class CustomerView(QWidget):
         self.bills_table.verticalHeader().setVisible(False)
         bills_layout.addWidget(self.bills_table)
         self.view_receipt_btn = QPushButton("View Receipt PDF")
+        self.view_receipt_btn.setObjectName("btn_secondary")
         self.view_receipt_btn.clicked.connect(self.view_selected_receipt)
         self.resend_whatsapp_btn = QPushButton("Resend WhatsApp")
+        self.resend_whatsapp_btn.setObjectName("btn_success")
         self.resend_whatsapp_btn.clicked.connect(self.resend_whatsapp)
         bills_layout.addWidget(self.view_receipt_btn)
         bills_layout.addWidget(self.resend_whatsapp_btn)
@@ -99,8 +104,11 @@ class CustomerView(QWidget):
 
         button_layout = QHBoxLayout()
         self.add_button = QPushButton("Add Customer")
+        self.add_button.setObjectName("btn_success")
         self.edit_button = QPushButton("Edit Customer")
+        self.edit_button.setObjectName("btn_primary")
         self.delete_button = QPushButton("Delete Customer")
+        self.delete_button.setObjectName("btn_danger")
         button_layout.addWidget(self.add_button)
         button_layout.addWidget(self.edit_button)
         button_layout.addWidget(self.delete_button)

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
@@ -47,11 +49,14 @@ class BillHistoryView(QWidget):
         self._billing_service = billing_service
         self._notification_service = notification_service
         self._settings_service = settings_service
-        self._currency_symbol = self._settings_service.get_setting("currency_symbol", "?") or "?"
+        self._currency_symbol = self._settings_service.get_setting(
+            "currency_symbol",
+            "\u20B9",
+        ) or "\u20B9"
         self._selected_bill: Optional[BillData] = None
 
         self.setWindowTitle("Bill History")
-        self.setMinimumWidth(900)
+        self.setMinimumWidth(600)
         self.setMinimumHeight(600)
 
         self._setup_ui()
@@ -101,6 +106,7 @@ class BillHistoryView(QWidget):
         filter_layout.addRow("Payment Method:", self._payment_method_combo)
 
         search_button = QPushButton("Search")
+        search_button.setObjectName("btn_primary")
         filter_layout.addRow(search_button)
         filter_group.setLayout(filter_layout)
         layout.addWidget(filter_group)
@@ -123,8 +129,11 @@ class BillHistoryView(QWidget):
 
         action_layout = QHBoxLayout()
         self._view_pdf_button = QPushButton("View PDF")
+        self._view_pdf_button.setObjectName("btn_secondary")
         self._resend_button = QPushButton("Resend WhatsApp")
+        self._resend_button.setObjectName("btn_success")
         self._print_button = QPushButton("Print")
+        self._print_button.setObjectName("btn_primary")
         action_layout.addWidget(self._view_pdf_button)
         action_layout.addWidget(self._resend_button)
         action_layout.addWidget(self._print_button)
@@ -229,6 +238,11 @@ class BillHistoryView(QWidget):
             return
 
         try:
-            os.startfile(pdf_path, "print")
-        except Exception:
+            if sys.platform.startswith("win"):
+                os.startfile(pdf_path, "print")
+            elif sys.platform == "darwin":
+                subprocess.run(["open", pdf_path], check=True)
+            else:
+                subprocess.run(["xdg-open", pdf_path], check=True)
+        except (OSError, subprocess.SubprocessError):
             QMessageBox.information(self, "Print Receipt", f"Receipt saved at:\n{pdf_path}")

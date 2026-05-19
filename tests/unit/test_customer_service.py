@@ -122,6 +122,35 @@ def test_create_customer_normalizes_phone() -> None:
     assert result.phone == "+919998887777"
 
 
+def test_create_customer_phone_only_spaces_raises() -> None:
+    service = CustomerService(_StubCustomerRepo(), _StubBillRepo(bills=[]))
+
+    with pytest.raises(InsufficientDataError):
+        service.create_customer("Alex", "   ", None)
+
+
+def test_create_customer_accepts_international_phone() -> None:
+    service = CustomerService(_StubCustomerRepo(), _StubBillRepo(bills=[]))
+
+    result = service.create_customer("Alex", "+44 123 456 789", None)
+
+    assert result.phone == "+44123456789"
+
+
+def test_create_customer_short_phone_raises() -> None:
+    service = CustomerService(_StubCustomerRepo(), _StubBillRepo(bills=[]))
+
+    with pytest.raises(ValidationError):
+        service.create_customer("Alex", "12", None)
+
+
+def test_create_customer_long_phone_raises() -> None:
+    service = CustomerService(_StubCustomerRepo(), _StubBillRepo(bills=[]))
+
+    with pytest.raises(ValidationError):
+        service.create_customer("Alex", "1234567890123456", None)
+
+
 def test_create_customer_invalid_phone_raises_validation_error() -> None:
     service = CustomerService(_StubCustomerRepo(), _StubBillRepo(bills=[]))
 
@@ -170,6 +199,34 @@ def test_update_customer_normalizes_phone() -> None:
     assert result.phone == "9991234567"
 
 
+def test_update_customer_invalid_phone_raises() -> None:
+    customer = Customer(id=1, name="Alex", phone="999")
+    repo = _StubCustomerRepo(customer=customer)
+    service = CustomerService(repo, _StubBillRepo(bills=[]))
+
+    with pytest.raises(ValidationError):
+        service.update_customer(
+            1,
+            CustomerData(id=1, name="New", phone="ABC", notes=None, last_visit_at=None),
+        )
+
+
+def test_update_customer_repo_returns_none_raises() -> None:
+    class _MissingUpdateRepo(_StubCustomerRepo):
+        def update_customer(self, customer_id: int, name: str, phone: str, notes: str | None):
+            return None
+
+    customer = Customer(id=1, name="Alex", phone="999")
+    repo = _MissingUpdateRepo(customer=customer)
+    service = CustomerService(repo, _StubBillRepo(bills=[]))
+
+    with pytest.raises(CustomerNotFoundError):
+        service.update_customer(
+            1,
+            CustomerData(id=1, name="New", phone="999", notes=None, last_visit_at=None),
+        )
+
+
 def test_search_customers_empty_returns_list() -> None:
     customer = Customer(id=1, name="Alex", phone="999")
     service = CustomerService(_StubCustomerRepo(customer=customer), _StubBillRepo(bills=[]))
@@ -216,6 +273,25 @@ def test_get_customer_bills_includes_customer_info() -> None:
     results = service.get_customer_bills(1)
 
     assert results[0].customer_name == "Alex"
+
+
+def test_delete_customer_success() -> None:
+    customer = Customer(id=1, name="Alex", phone="999")
+    service = CustomerService(_StubCustomerRepo(customer=customer), _StubBillRepo(bills=[]))
+
+    service.delete_customer(1)
+
+
+def test_search_customers_returns_multiple_matches() -> None:
+    class _MultiRepo(_StubCustomerRepo):
+        def search(self, term: str) -> Iterable[Customer]:
+            return [Customer(id=1, name="Alex", phone="1"), Customer(id=2, name="Bob", phone="2")]
+
+    service = CustomerService(_MultiRepo(), _StubBillRepo(bills=[]))
+
+    results = service.search_customers("a")
+
+    assert len(results) == 2
 
 
 def test_to_bill_data_handles_inspect_failure() -> None:

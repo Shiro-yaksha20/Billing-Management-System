@@ -188,3 +188,41 @@ def test_send_whatsapp_message_handles_unexpected_exception(monkeypatch) -> None
     success, response = send_whatsapp_message("123", "hi", settings)
     assert success is False
     assert response["error"] == "Unexpected error."
+
+
+def test_send_whatsapp_message_with_windows_path(tmp_path, monkeypatch) -> None:
+    settings = _StubSettings("token", "phone")
+    attachment = tmp_path / "receipt.pdf"
+    attachment.write_bytes(b"data")
+    windows_path = str(attachment).replace("/", "\\")
+    captured = {}
+
+    class _UploadResponse:
+        status_code = 200
+
+        def json(self):
+            return {"id": "media"}
+
+        text = "ok"
+
+    class _MessageResponse:
+        status_code = 200
+
+        def json(self):
+            return {"ok": True}
+
+        text = "ok"
+
+    def _post(url, headers=None, data=None, files=None, timeout=None):
+        if url.endswith("/media"):
+            captured["filename"] = files["file"][0]
+            return _UploadResponse()
+        return _MessageResponse()
+
+    monkeypatch.setattr("requests.post", _post)
+
+    success, response = send_whatsapp_message("123", "hi", settings, attachment_path=windows_path)
+
+    assert success is True
+    assert response["ok"] is True
+    assert captured["filename"] == "receipt.pdf"

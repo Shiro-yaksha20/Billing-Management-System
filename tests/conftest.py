@@ -75,7 +75,7 @@ def sample_bill(temp_db) -> int:
         bill = Bill(
             customer_id=customer.id,
             staff_id=staff.id,
-            bill_datetime=datetime.utcnow(),
+            bill_datetime=datetime.now(),
             subtotal=Decimal("50"),
             discount_amount=Decimal("0"),
             discount_type="none",

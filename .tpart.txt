@@ -1,0 +1,12 @@
+============================= test session starts =============================
+platform win32 -- Python 3.10.11, pytest-9.0.2, pluggy-1.6.0
+rootdir: C:\Users\sudha\source\repos\Shiro-yaksha20\Billing-Management-System
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: anyio-4.8.0, cov-7.0.0
+collected 44 items
+
+tests\unit\test_billing_service.py ......................                [ 50%]
+tests\unit\test_repository_layer.py ...........                          [ 75%]
+tests\unit\test_migrations.py ...........                                [100%]
+
+============================= 44 passed in 2.10s ==============================

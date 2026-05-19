@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, contextmanager
 from typing import Callable, Iterable, List, Optional
 
 from sqlalchemy import distinct
@@ -19,6 +19,16 @@ class ServiceRepository(BaseRepository[Service]):
 
     def __init__(self, session_factory: SessionFactory) -> None:
         super().__init__(session_factory, Service)
+
+    @contextmanager
+    def transaction_scope(self):
+        """Provide a shared transaction session for bulk operations."""
+        with self._session_factory() as db:
+            yield db
+
+    def session_context(self):
+        """Return a session context manager for batch operations."""
+        return self._session_factory()
 
     def list_active(self) -> Iterable[Service]:
         with self._session_factory() as db:
@@ -145,6 +155,9 @@ class ServiceRepository(BaseRepository[Service]):
         description: str | None,
         price,
         duration_minutes,
+        category: str | None = None,
+        variant: str | None = None,
+        display_name: str | None = None,
     ) -> Service | None:
         with self._session_factory() as db:
             service = db.query(Service).filter(Service.id == service_id).first()
@@ -154,6 +167,9 @@ class ServiceRepository(BaseRepository[Service]):
             service.description = description
             service.price = price
             service.duration_minutes = duration_minutes
+            service.category = category
+            service.variant = variant
+            service.display_name = display_name
             db.flush()
             return service
 

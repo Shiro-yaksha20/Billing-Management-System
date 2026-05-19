@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QHBoxLayout,
     QInputDialog,
+    QLabel,
     QLineEdit,
     QListWidget,
     QMessageBox,
@@ -179,7 +180,9 @@ class SettingsView(QWidget):
         self.business_phone_input.setText(self._settings_service.get_setting("business_phone", ""))
         self.business_gstin_input.setText(self._settings_service.get_setting("business_gstin", ""))
         self.default_tax_percent_input.setText(self._settings_service.get_setting("default_tax_percent", "0"))
-        self.currency_symbol_input.setText(self._settings_service.get_setting("currency_symbol", "?"))
+        self.currency_symbol_input.setText(
+            self._settings_service.get_setting("currency_symbol", "\u20B9")
+        )
         self.thank_you_message_input.setText(
             self._settings_service.get_setting("thank_you_message", "Thank you for your visit!")
         )
@@ -219,7 +222,10 @@ class SettingsView(QWidget):
         self._settings_service.set_setting("business_phone", phone)
         self._settings_service.set_setting("business_gstin", gstin)
         self._settings_service.set_setting("default_tax_percent", str(tax))
-        self._settings_service.set_setting("currency_symbol", self.currency_symbol_input.text().strip() or "?")
+        self._settings_service.set_setting(
+            "currency_symbol",
+            self.currency_symbol_input.text().strip() or "\u20B9",
+        )
         self._settings_service.set_setting("thank_you_message", self.thank_you_message_input.text())
         self._settings_service.set_setting("business_instagram", self.business_instagram_input.text().strip())
         self._settings_service.set_setting("business_tagline", self.business_tagline_input.text().strip())
@@ -333,8 +339,13 @@ class SettingsView(QWidget):
         category_buttons.addWidget(add_category_button)
         category_buttons.addWidget(rename_category_button)
         category_buttons.addWidget(delete_category_button)
+        category_note = QLabel(
+            "Note: categories are derived from service records and persist only when used by services."
+        )
+        category_note.setWordWrap(True)
         category_layout.addWidget(self._category_list)
         category_layout.addLayout(category_buttons)
+        category_layout.addWidget(category_note)
         category_group.setLayout(category_layout)
         layout.addWidget(category_group)
 

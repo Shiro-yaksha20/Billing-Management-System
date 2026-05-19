@@ -35,6 +35,9 @@ class LogViewerDialog(QDialog):
         refresh_button = QPushButton("Refresh")
         clear_button = QPushButton("Clear")
         close_button = QPushButton("Close")
+        refresh_button.setObjectName("btn_secondary")
+        clear_button.setObjectName("btn_danger")
+        close_button.setObjectName("btn_primary")
         refresh_button.clicked.connect(self._load_logs)
         clear_button.clicked.connect(self._clear_logs)
         close_button.clicked.connect(self.accept)
@@ -60,8 +63,23 @@ class LogViewerDialog(QDialog):
 
     def _clear_logs(self) -> None:
         log_path = self._log_path()
+        if (
+            QMessageBox.question(
+                self,
+                "Clear Logs",
+                "Clear the current log file contents?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            != QMessageBox.StandardButton.Yes
+        ):
+            return
+
         try:
-            log_path.write_text("", encoding="utf-8")
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a+", encoding="utf-8") as log_file:
+                log_file.seek(0)
+                log_file.truncate(0)
             self._log_view.setPlainText("")
         except Exception as exc:
             QMessageBox.warning(self, "Clear Failed", f"Failed to clear log file: {exc}")

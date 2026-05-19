@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -14,7 +16,7 @@ if TYPE_CHECKING:
     from ..services.notification_service import NotificationService
 
 
-def format_money(amount: Decimal, currency: str = "?") -> str:
+def format_money(amount: Decimal, currency: str = "\u20B9") -> str:
     """Format a monetary value with a currency symbol."""
     return f"{currency}{amount:,.2f}"
 
@@ -26,8 +28,13 @@ def open_pdf(pdf_path: str | None, parent: QWidget, title: str = "Receipt") -> N
         return
 
     try:
-        os.startfile(pdf_path)
-    except OSError:
+        if sys.platform.startswith("win"):
+            os.startfile(pdf_path)
+        elif sys.platform == "darwin":
+            subprocess.run(["open", pdf_path], check=True)
+        else:
+            subprocess.run(["xdg-open", pdf_path], check=True)
+    except (OSError, subprocess.SubprocessError):
         QMessageBox.information(parent, title, f"Receipt saved at:\n{pdf_path}")
 
 

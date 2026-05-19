@@ -50,7 +50,7 @@ def test_bill_repository_queries(temp_db) -> None:
             bill_number="B1",
             customer_id=customer.id,
             staff_id=staff.id,
-            bill_datetime=datetime.utcnow(),
+            bill_datetime=datetime.now(),
             subtotal=Decimal("10"),
             discount_amount=Decimal("0"),
             discount_type="none",
@@ -98,7 +98,7 @@ def test_bill_repository_updates(temp_db) -> None:
             bill_number=None,
             customer_id=customer.id,
             staff_id=staff.id,
-            bill_datetime=datetime.utcnow(),
+            bill_datetime=datetime.now(),
             subtotal=Decimal("10"),
             discount_amount=Decimal("0"),
             discount_type="none",
@@ -116,9 +116,11 @@ def test_bill_repository_updates(temp_db) -> None:
     assert repo.update_bill_number(9999, "X") is False
     assert repo.update_whatsapp_status(9999, "Sent") is False
     assert repo.update_pdf_path(9999, "path.pdf") is False
+    assert repo.update_payment_status(9999, "Cancelled") is False
     assert repo.update_bill_number(bill_id, "B2") is True
     assert repo.update_whatsapp_status(bill_id, "Sent", "") is True
     assert repo.update_pdf_path(bill_id, "path.pdf") is True
+    assert repo.update_payment_status(bill_id, "Cancelled") is True
     assert repo.get_with_details(bill_id) is not None
 
 
@@ -136,8 +138,8 @@ def test_customer_repository_methods(temp_db) -> None:
     assert repo.get_bills(customer_id) == []
     assert repo.update_customer(customer_id, "New", "321", None) is not None
     assert repo.update_customer(9999, "New", "321", None) is None
-    assert repo.update_last_visit(customer_id, datetime.utcnow()) is True
-    assert repo.update_last_visit(9999, datetime.utcnow()) is False
+    assert repo.update_last_visit(customer_id, datetime.now()) is True
+    assert repo.update_last_visit(9999, datetime.now()) is False
 
 
 def test_customer_repository_search_escapes_like_wildcards(temp_db) -> None:
@@ -202,7 +204,7 @@ def test_bill_repository_get_daily_stats(temp_db) -> None:
                 bill_number="B1",
                 customer_id=customer.id,
                 staff_id=staff.id,
-                bill_datetime=datetime.utcnow(),
+                bill_datetime=datetime.now(),
                 subtotal=Decimal("10"),
                 discount_amount=Decimal("0"),
                 discount_type="none",
@@ -218,7 +220,7 @@ def test_bill_repository_get_daily_stats(temp_db) -> None:
                 bill_number="B2",
                 customer_id=customer.id,
                 staff_id=staff.id,
-                bill_datetime=datetime.utcnow(),
+                bill_datetime=datetime.now(),
                 subtotal=Decimal("20"),
                 discount_amount=Decimal("0"),
                 discount_type="none",
@@ -231,7 +233,7 @@ def test_bill_repository_get_daily_stats(temp_db) -> None:
         )
 
     repo = BillRepository(infra_db.db_session)
-    stats = repo.get_daily_stats(datetime.utcnow().date())
+    stats = repo.get_daily_stats(datetime.now().date())
 
     assert stats["total_bills"] >= 2
     assert stats["paid_total"] >= Decimal("10")

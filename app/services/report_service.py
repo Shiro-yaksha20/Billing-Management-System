@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -15,13 +16,24 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 
 from ..infrastructure.logging import logger
 from ..repositories.bill_repository import BillRepository
+from .settings_service import SettingsService
 
 
 class ReportService:
     """Service for bill export operations."""
 
-    def __init__(self, bill_repo: BillRepository) -> None:
+    def __init__(
+        self,
+        bill_repo: BillRepository,
+        settings_service: SettingsService | None = None,
+    ) -> None:
         self._bill_repo = bill_repo
+        self._settings_service = settings_service
+
+    def _currency_symbol(self) -> str:
+        if not self._settings_service:
+            return "\u20B9"
+        return self._settings_service.get_setting("currency_symbol", "\u20B9") or "\u20B9"
 
     def export_bills(
         self,
@@ -85,17 +97,17 @@ class ReportService:
                     ws.cell(row=row, column=7, value=item.service.name if item.service else "")
                     ws.cell(row=row, column=8, value=item.service.variant if item.service else "")
                     ws.cell(row=row, column=9, value=item.quantity)
-                    ws.cell(row=row, column=10, value=float(item.unit_price) if item.unit_price else 0)
-                    ws.cell(row=row, column=11, value=float(item.line_total) if item.line_total else 0)
-                    ws.cell(row=row, column=12, value=float(bill.subtotal) if bill.subtotal else 0)
+                    ws.cell(row=row, column=10, value=str(item.unit_price or Decimal("0")))
+                    ws.cell(row=row, column=11, value=str(item.line_total or Decimal("0")))
+                    ws.cell(row=row, column=12, value=str(bill.subtotal or Decimal("0")))
                     ws.cell(
                         row=row,
                         column=13,
-                        value=float(bill.discount_amount) if bill.discount_amount else 0,
+                        value=str(bill.discount_amount or Decimal("0")),
                     )
-                    ws.cell(row=row, column=14, value=float(bill.tax_percent) if bill.tax_percent else 0)
-                    ws.cell(row=row, column=15, value=float(bill.tax_amount) if bill.tax_amount else 0)
-                    ws.cell(row=row, column=16, value=float(bill.total) if bill.total else 0)
+                    ws.cell(row=row, column=14, value=str(bill.tax_percent or Decimal("0")))
+                    ws.cell(row=row, column=15, value=str(bill.tax_amount or Decimal("0")))
+                    ws.cell(row=row, column=16, value=str(bill.total or Decimal("0")))
                     ws.cell(row=row, column=17, value=bill.payment_method or "")
                     ws.cell(
                         row=row,
@@ -170,13 +182,13 @@ class ReportService:
                                 item.service.name if item.service else "",
                                 item.service.variant if item.service else "",
                                 item.quantity,
-                                float(item.unit_price) if item.unit_price else 0,
-                                float(item.line_total) if item.line_total else 0,
-                                float(bill.subtotal) if bill.subtotal else 0,
-                                float(bill.discount_amount) if bill.discount_amount else 0,
-                                float(bill.tax_percent) if bill.tax_percent else 0,
-                                float(bill.tax_amount) if bill.tax_amount else 0,
-                                float(bill.total) if bill.total else 0,
+                                str(item.unit_price or Decimal("0")),
+                                str(item.line_total or Decimal("0")),
+                                str(bill.subtotal or Decimal("0")),
+                                str(bill.discount_amount or Decimal("0")),
+                                str(bill.tax_percent or Decimal("0")),
+                                str(bill.tax_amount or Decimal("0")),
+                                str(bill.total or Decimal("0")),
                                 bill.payment_method or "",
                                 getattr(bill, "payment_status", "Paid") or "Paid",
                                 getattr(bill, "transaction_id", "") or "",
@@ -205,10 +217,11 @@ class ReportService:
                 )
             )
             total_bills = len(bills)
-            total_amount = sum((float(bill.total or 0) for bill in bills), 0.0)
+            currency_symbol = self._currency_symbol()
+            total_amount = sum((Decimal(bill.total or 0) for bill in bills), Decimal("0"))
             pending_amount = sum(
-                (float(bill.total or 0) for bill in bills if bill.payment_status == "Pending"),
-                0.0,
+                (Decimal(bill.total or 0) for bill in bills if bill.payment_status == "Pending"),
+                Decimal("0"),
             )
 
             doc = SimpleDocTemplate(output_path, pagesize=letter)
@@ -222,19 +235,41 @@ class ReportService:
                 date_range = f"{start} to {end}"
             story.append(Paragraph(f"Date Range: {date_range}", styles["Normal"]))
             story.append(Paragraph(f"Total Bills: {total_bills}", styles["Normal"]))
-            story.append(Paragraph(f"Total Amount: Rs. {total_amount:.2f}", styles["Normal"]))
-            story.append(Paragraph(f"Pending Amount: Rs. {pending_amount:.2f}", styles["Normal"]))
+            story.append(
+                Paragraph(
+                    f"Total Amount: {currency_symbol}{total_amount:,.2f}",
+                    styles["Normal"],
+                )
+            )
+            story.append(
+                Paragraph(
+                    f"Pending Amount: {currency_symbol}{pending_amount:,.2f}",
+                    styles["Normal"],
+                )
+            )
             story.append(Spacer(1, 12))
 
+            max_bills = 50
+            truncated = total_bills > max_bills
+            bills = bills[:max_bills]
+            if truncated:
+                story.append(
+                    Paragraph(
+                        f"Note: Showing first {max_bills} of {total_bills} bills.",
+                        styles["Normal"],
+                    )
+                )
+                story.append(Spacer(1, 12))
+
             table_data = [["Bill #", "Date", "Customer", "Total", "Status"]]
-            for bill in bills[:20]:
+            for bill in bills:
                 table_data.append(
                     [
                         bill.bill_number or bill.id,
                         bill.bill_datetime.strftime("%Y-%m-%d") if bill.bill_datetime else "",
                         bill.customer.name if bill.customer else "",
-                        f"Rs. {float(bill.total or 0):.2f}",
-                        bill.payment_status or bill.status or "",
+                        f"{currency_symbol}{Decimal(bill.total or 0):,.2f}",
+                        bill.payment_status or "",
                     ]
                 )
 

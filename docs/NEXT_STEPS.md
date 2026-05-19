@@ -81,6 +81,10 @@
 - [x] Add tests for wildcard escaping and dashboard aggregation.
 - [x] Update `README.md` to generic branding and latest UX behavior.
 - [x] Update `CHANGELOG.md` with completed phased items.
+- [x] Complete final closure pass for remaining implementation-plan gaps.
+- [x] Add status-sync migration for legacy `bill.status`/`bill.payment_status` rows.
+- [x] Add final manual verification report (`docs/FINAL_MANUAL_VERIFICATION_REPORT.md`).
+- [x] Re-run mypy command path with project-level closure configuration.
 
 ---
 

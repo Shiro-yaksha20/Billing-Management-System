@@ -18,7 +18,7 @@ from app.exceptions.business_errors import (
     NegativeTotalError,
 )
 from app.exceptions.validation_errors import ValidationError
-from app.models import Bill, Customer, Staff
+from app.models import Bill, BillItem, Customer, Service, Staff
 from app.services.billing_service import BillingService
 
 
@@ -59,6 +59,9 @@ class _StubBillRepo:
 
     def get_with_details(self, bill_id: int):
         return self.last_bill
+
+    def update_payment_status(self, bill_id: int, payment_status: str) -> bool:
+        return True
 
 
 class _StubCustomerRepo:
@@ -226,6 +229,9 @@ def test_create_bill_sets_bill_number() -> None:
     assert bill.id == 1
     assert bill.bill_number == f"INV-{bill.bill_datetime.year}-0001"
     assert bill.total == Decimal("94.5")
+    assert bill.status == "Paid"
+    assert bill.payment_status == "Paid"
+    assert bill.bill_datetime.tzinfo is None
 
 
 def test_create_bill_keeps_existing_bill_number() -> None:
@@ -251,7 +257,7 @@ def test_create_bill_keeps_existing_bill_number() -> None:
     bill = Bill(
         customer_id=1,
         staff_id=1,
-        bill_datetime=datetime.utcnow(),
+        bill_datetime=datetime.now(),
         subtotal=Decimal("10"),
         discount_amount=Decimal("0"),
         discount_type="none",
@@ -286,7 +292,7 @@ def test_to_bill_data_includes_customer_info() -> None:
         bill_number="1",
         customer_id=1,
         staff_id=1,
-        bill_datetime=datetime.utcnow(),
+        bill_datetime=datetime.now(),
         subtotal=Decimal("10"),
         discount_amount=Decimal("0"),
         discount_type="none",
@@ -333,7 +339,7 @@ def test_to_bill_data_handles_inspect_failure() -> None:
             self.bill_number = "1"
             self.customer_id = 1
             self.staff_id = 1
-            self.bill_datetime = datetime.utcnow()
+            self.bill_datetime = datetime.now()
             self.subtotal = Decimal("10")
             self.discount_amount = Decimal("0")
             self.discount_type = "none"
@@ -375,6 +381,29 @@ def test_update_whatsapp_status_calls_repo() -> None:
     assert calls["status"] == "Sent"
 
 
+def test_cancel_bill_calls_repo() -> None:
+    calls = {}
+
+    class _StubRepo(_StubBillRepo):
+        def update_payment_status(self, bill_id: int, payment_status: str) -> bool:
+            calls["bill_id"] = bill_id
+            calls["payment_status"] = payment_status
+            return True
+
+    service = BillingService(
+        bill_repo=_StubRepo(),
+        customer_repo=_StubCustomerRepo(),
+        staff_repo=_StubStaffRepo(),
+        settings_service=_StubSettingsService(),
+    )
+
+    result = service.cancel_bill(1)
+
+    assert result is True
+    assert calls["bill_id"] == 1
+    assert calls["payment_status"] == "Cancelled"
+
+
 def test_calculate_discount_flat_valid_returns_amount() -> None:
     service = _service()
     result = service.calculate_discount(Decimal("100"), "flat", Decimal("20"))
@@ -385,6 +414,18 @@ def test_calculate_discount_percent_valid_returns_amount() -> None:
     service = _service()
     result = service.calculate_discount(Decimal("200"), "percent", Decimal("10"))
     assert result == Decimal("20")
+
+
+def test_calculate_discount_percent_hundred_returns_subtotal() -> None:
+    service = _service()
+    result = service.calculate_discount(Decimal("200"), "percent", Decimal("100"))
+    assert result == Decimal("200")
+
+
+def test_calculate_discount_percent_zero_subtotal_returns_zero() -> None:
+    service = _service()
+    result = service.calculate_discount(Decimal("0"), "percent", Decimal("10"))
+    assert result == Decimal("0")
 
 
 def test_calculate_discount_none_returns_zero() -> None:
@@ -411,10 +452,28 @@ def test_calculate_tax_valid_returns_amount() -> None:
     assert result == Decimal("5")
 
 
+def test_calculate_tax_zero_percent_returns_zero() -> None:
+    service = _service()
+    result = service.calculate_tax(Decimal("100"), Decimal("0"))
+    assert result == Decimal("0")
+
+
+def test_calculate_tax_hundred_percent_returns_amount() -> None:
+    service = _service()
+    result = service.calculate_tax(Decimal("100"), Decimal("100"))
+    assert result == Decimal("100")
+
+
 def test_calculate_tax_negative_percent_raises() -> None:
     service = _service()
     with pytest.raises(ValidationError):
         service.calculate_tax(Decimal("100"), Decimal("-1"))
+
+
+def test_calculate_tax_over_hundred_percent_raises() -> None:
+    service = _service()
+    with pytest.raises(ValidationError):
+        service.calculate_tax(Decimal("100"), Decimal("101"))
 
 
 def test_create_bill_negative_total_raises() -> None:
@@ -466,8 +525,8 @@ def test_get_bills_with_filters_returns_data() -> None:
     results = service.get_bills(
         bill_number="1",
         customer_name="Alex",
-        start_date=datetime.utcnow(),
-        end_date=datetime.utcnow(),
+        start_date=datetime.now(),
+        end_date=datetime.now(),
         payment_status="Paid",
         payment_method="Cash",
     )
@@ -481,7 +540,7 @@ def test_generate_receipt_returns_path(monkeypatch) -> None:
         bill_number="1",
         customer_id=1,
         staff_id=1,
-        bill_datetime=datetime.utcnow(),
+        bill_datetime=datetime.now(),
         subtotal=Decimal("10"),
         discount_amount=Decimal("0"),
         discount_type="none",
@@ -511,3 +570,255 @@ def test_generate_receipt_returns_path(monkeypatch) -> None:
 
     assert service.generate_receipt(1) == "receipt.pdf"
     assert repo.updated_pdf_path == "receipt.pdf"
+
+
+def test_create_bill_calls_update_last_visit() -> None:
+    bill_repo = _StubBillRepo()
+    customer_repo = _StubCustomerRepo()
+    staff_repo = _StubStaffRepo()
+    service = BillingService(
+        bill_repo=bill_repo,
+        customer_repo=customer_repo,
+        staff_repo=staff_repo,
+        settings_service=_StubSettingsService(),
+    )
+    options = BillOptions(
+        discount_type="none",
+        discount_value=Decimal("0"),
+        tax_percent=Decimal("0"),
+        payment_method="Cash",
+        transaction_id=None,
+        payment_status="Paid",
+    )
+    items = [BillItemInput(service_id=1, quantity=1, unit_price=Decimal("20"))]
+
+    service.create_bill(customer_id=7, staff_id=1, items=items, options=options)
+
+    assert customer_repo.updated_last_visit == [7]
+
+
+def test_create_bill_multiple_items_sums_correctly() -> None:
+    service = _service()
+    options = BillOptions(
+        discount_type="none",
+        discount_value=Decimal("0"),
+        tax_percent=Decimal("0"),
+        payment_method="Cash",
+        transaction_id=None,
+        payment_status="Paid",
+    )
+    items = [
+        BillItemInput(service_id=1, quantity=2, unit_price=Decimal("50")),
+        BillItemInput(service_id=2, quantity=1, unit_price=Decimal("20")),
+    ]
+
+    bill = service.create_bill(customer_id=1, staff_id=1, items=items, options=options)
+
+    assert bill.subtotal == Decimal("120")
+    assert bill.total == Decimal("120")
+
+
+def test_create_bill_percent_discount_and_tax_combined() -> None:
+    service = _service()
+    options = BillOptions(
+        discount_type="percent",
+        discount_value=Decimal("10"),
+        tax_percent=Decimal("5"),
+        payment_method="Cash",
+        transaction_id=None,
+        payment_status="Paid",
+    )
+    items = [BillItemInput(service_id=1, quantity=2, unit_price=Decimal("50"))]
+
+    bill = service.create_bill(customer_id=1, staff_id=1, items=items, options=options)
+
+    assert bill.subtotal == Decimal("100")
+    assert bill.discount_amount == Decimal("10")
+    assert bill.tax_amount == Decimal("4.5")
+    assert bill.total == Decimal("94.5")
+
+
+def test_get_bills_without_filters_returns_all() -> None:
+    bills = [
+        _StubBill(
+            id=1,
+            bill_number="1",
+            customer_id=1,
+            staff_id=1,
+            bill_datetime=None,
+            subtotal=Decimal("10"),
+            discount_amount=Decimal("0"),
+            discount_type="none",
+            tax_amount=Decimal("0"),
+            tax_percent=Decimal("0"),
+            total=Decimal("10"),
+            payment_method="Cash",
+            status="Paid",
+            pdf_path=None,
+            whatsapp_status="Not Sent",
+            whatsapp_last_error=None,
+            transaction_id=None,
+            payment_status="Paid",
+        ),
+        _StubBill(
+            id=2,
+            bill_number="2",
+            customer_id=2,
+            staff_id=1,
+            bill_datetime=None,
+            subtotal=Decimal("20"),
+            discount_amount=Decimal("0"),
+            discount_type="none",
+            tax_amount=Decimal("0"),
+            tax_percent=Decimal("0"),
+            total=Decimal("20"),
+            payment_method="Cash",
+            status="Pending",
+            pdf_path=None,
+            whatsapp_status="Not Sent",
+            whatsapp_last_error=None,
+            transaction_id=None,
+            payment_status="Pending",
+        ),
+    ]
+    service = BillingService(
+        bill_repo=_StubBillQueryRepo(bills=bills),
+        customer_repo=_StubCustomerRepo(),
+        staff_repo=_StubStaffRepo(),
+        settings_service=_StubSettingsService(),
+    )
+
+    results = service.get_bills()
+
+    assert len(results) == 2
+
+
+def test_get_bills_returns_empty_when_no_matches() -> None:
+    service = BillingService(
+        bill_repo=_StubBillQueryRepo(bills=[]),
+        customer_repo=_StubCustomerRepo(),
+        staff_repo=_StubStaffRepo(),
+        settings_service=_StubSettingsService(),
+    )
+
+    results = service.get_bills(bill_number="NOT-FOUND")
+
+    assert results == []
+
+
+def test_get_dashboard_stats_with_mixed_paid_pending() -> None:
+    bills = [
+        _StubBill(customer_id=1, total=Decimal("30"), payment_status="Paid"),
+        _StubBill(customer_id=2, total=Decimal("20"), payment_status="Pending"),
+        _StubBill(customer_id=1, total=Decimal("10"), payment_status="Pending"),
+    ]
+    service = BillingService(
+        bill_repo=_StubBillQueryRepo(bills=bills, recent=[]),
+        customer_repo=_StubCustomerRepo(),
+        staff_repo=_StubStaffRepo(),
+        settings_service=_StubSettingsService(),
+    )
+
+    stats = service.get_dashboard_stats()
+
+    assert stats.today_sales == Decimal("30")
+    assert stats.pending_amount == Decimal("30")
+    assert stats.pending_count == 2
+    assert stats.today_customers == 2
+
+
+def test_generate_receipt_bill_not_found_raises() -> None:
+    class _MissingRepo(_StubBillRepo):
+        def get_with_details(self, bill_id: int):
+            return None
+
+    service = BillingService(
+        bill_repo=_MissingRepo(),
+        customer_repo=_StubCustomerRepo(),
+        staff_repo=_StubStaffRepo(),
+        settings_service=_StubSettingsService(),
+    )
+
+    with pytest.raises(ValidationError, match="Bill not found"):
+        service.generate_receipt(1)
+
+
+def test_generate_receipt_builds_item_mapping(monkeypatch) -> None:
+    captured = {}
+    bill = Bill(
+        id=1,
+        bill_number="1",
+        customer_id=1,
+        staff_id=1,
+        bill_datetime=datetime.now(),
+        subtotal=Decimal("100"),
+        discount_amount=Decimal("0"),
+        discount_type="none",
+        tax_amount=Decimal("0"),
+        tax_percent=Decimal("0"),
+        total=Decimal("100"),
+        payment_method="Cash",
+        payment_status="Paid",
+    )
+    bill.customer = Customer(id=1, name="Alex", phone="999")
+    bill.staff = Staff(id=1, name="Stylist", phone="", role="", active=True)
+    service_item = Service(
+        id=9,
+        name="Hair Cut",
+        display_name="Hair Cut Premium",
+        variant="Premium",
+        active=True,
+    )
+    bill.items = [
+        BillItem(
+            id=1,
+            service_id=9,
+            quantity=2,
+            unit_price=Decimal("50"),
+            line_total=Decimal("100"),
+            service=service_item,
+        )
+    ]
+
+    repo = _StubBillRepo()
+    repo.last_bill = bill
+    service = BillingService(
+        bill_repo=repo,
+        customer_repo=_StubCustomerRepo(),
+        staff_repo=_StubStaffRepo(),
+        settings_service=_StubSettingsService(),
+    )
+
+    def _fake_generate(receipt, settings_service):
+        captured["items"] = receipt.items
+        return "receipt.pdf"
+
+    monkeypatch.setattr("app.services.billing_service.generate_receipt_pdf", _fake_generate)
+
+    service.generate_receipt(1)
+
+    assert len(captured["items"]) == 1
+    assert captured["items"][0].service_name == "Hair Cut"
+    assert captured["items"][0].display_name == "Hair Cut Premium"
+    assert captured["items"][0].variant == "Premium"
+
+
+def test_generate_bill_number_uses_custom_prefix() -> None:
+    class _PrefixSettings(_StubSettingsService):
+        def get_setting(self, key: str, default: str | None = None) -> str | None:
+            if key == "bill_number_prefix":
+                return "BILL"
+            return default
+
+    service = BillingService(
+        bill_repo=_StubBillRepo(),
+        customer_repo=_StubCustomerRepo(),
+        staff_repo=_StubStaffRepo(),
+        settings_service=_PrefixSettings(),
+    )
+    bill = Bill(id=7, customer_id=1, staff_id=1, total=Decimal("1"), bill_datetime=datetime.now())
+
+    number = service._generate_bill_number(bill)
+
+    assert number.startswith("BILL-")
+    assert number.endswith("-0007")

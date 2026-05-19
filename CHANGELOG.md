@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- Default currency fallback now uses the rupee symbol (`\u20B9`) across UI, PDF, and WhatsApp messaging.
+- PDF summary export shows up to 50 bills and includes a truncation note when needed.
+- Bill status column now uses a plain string value (`Paid`/`Pending`) with a TODO for cancellation support.
+- Development requirements now include base app dependencies via `requirements.txt`.
+
+### Fixed
+- WhatsApp phone normalization now strips separators and avoids double-prepending the country code.
+- Settings migration avoids overwriting values already stored under the new key.
+- Backup reason parsing now handles both full and short filename formats.
+- Billing form reset now clears customer fields and resets the customer status indicator.
+- CSV service import now uses the repository session context helper for batch operations.
+- `app/models.py` comment encoding now avoids non-UTF-8 characters for tooling compatibility.
+
+### Added
+- Expanded unit, integration, and e2e test coverage for converters, settings migrations, billing flows, exports, and helpers.
+- Test data updates recorded for the current test suite.
+
+## [2.1.1] - 2026-04-18
+
+### Added
+- Bill status synchronization migration (`app/migrate_bill_status_sync.py`) and startup execution hook.
+- Final manual verification artifact (`docs/FINAL_MANUAL_VERIFICATION_REPORT.md`).
+
+### Changed
+- Moved bill timestamp defaults to UTC-aware model defaults and UTC-aware bill creation in service flow.
+- Updated daily dashboard statistics query to convert local day boundaries to UTC before filtering.
+- Added synchronized payment-status update path in `BillRepository` and cancellation operation in `BillingService`.
+- Extended semantic button hierarchy styling and object-name usage across major views/dialogs.
+- Added dashboard stat-card elevation using drop-shadow effects.
+
+### Fixed
+- Remaining Windows-only PDF print/open path in bill history now has cross-platform fallbacks.
+
 ## [2.1.0] - 2026-04-16
 
 ### Added

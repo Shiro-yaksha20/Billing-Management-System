@@ -107,7 +107,7 @@ def generate_receipt_pdf(
     story.append(Paragraph(f"Phone: {receipt.customer_phone}", normal))
     story.append(Spacer(1, 12))
 
-    currency_symbol = settings_service.get_setting("currency_symbol", "?") or "?"
+    currency_symbol = settings_service.get_setting("currency_symbol", "\u20B9") or "\u20B9"
 
     def _money(value: Decimal | None) -> str:
         amount = value if value is not None else Decimal("0")

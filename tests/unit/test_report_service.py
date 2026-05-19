@@ -23,7 +23,7 @@ def test_export_bills_creates_file(temp_db, tmp_path) -> None:
         bill = Bill(
             customer_id=customer.id,
             staff_id=staff.id,
-            bill_datetime=datetime.utcnow(),
+            bill_datetime=datetime.now(),
             subtotal=Decimal("10"),
             discount_amount=Decimal("0"),
             discount_type="none",
@@ -63,7 +63,7 @@ def test_export_bills_csv_creates_file(temp_db, tmp_path) -> None:
         bill = Bill(
             customer_id=customer.id,
             staff_id=staff.id,
-            bill_datetime=datetime.utcnow(),
+            bill_datetime=datetime.now(),
             subtotal=Decimal("10"),
             discount_amount=Decimal("0"),
             discount_type="none",
@@ -103,7 +103,7 @@ def test_export_bills_pdf_summary_creates_file(temp_db, tmp_path) -> None:
         bill = Bill(
             customer_id=customer.id,
             staff_id=staff.id,
-            bill_datetime=datetime.utcnow(),
+            bill_datetime=datetime.now(),
             subtotal=Decimal("10"),
             discount_amount=Decimal("0"),
             discount_type="none",
@@ -198,7 +198,7 @@ def test_export_bills_pdf_summary_with_date_range(temp_db, tmp_path) -> None:
         bill = Bill(
             customer_id=customer.id,
             staff_id=staff.id,
-            bill_datetime=datetime.utcnow(),
+            bill_datetime=datetime.now(),
             subtotal=Decimal("10"),
             discount_amount=Decimal("0"),
             discount_type="none",
@@ -225,6 +225,175 @@ def test_export_bills_pdf_summary_with_date_range(temp_db, tmp_path) -> None:
 
     assert report_service.export_bills_pdf_summary(
         str(output_path),
-        start_date=datetime.utcnow(),
-        end_date=datetime.utcnow(),
+        start_date=datetime.now(),
+        end_date=datetime.now(),
     ) is True
+
+
+def test_export_bills_with_date_range_filters(tmp_path) -> None:
+    captured = {}
+
+    class _Repo:
+        def find_for_export(self, start_date=None, end_date=None, customer_id=None):
+            captured["start_date"] = start_date
+            captured["end_date"] = end_date
+            captured["customer_id"] = customer_id
+            return []
+
+    service = ReportService(_Repo())
+    start_date = datetime(2024, 1, 1)
+    end_date = datetime(2024, 1, 2)
+
+    assert service.export_bills(str(tmp_path / "export.xlsx"), start_date=start_date, end_date=end_date)
+    assert captured["start_date"] == start_date
+    assert captured["end_date"] == end_date
+
+
+def test_export_bills_with_customer_filter(tmp_path) -> None:
+    captured = {}
+
+    class _Repo:
+        def find_for_export(self, start_date=None, end_date=None, customer_id=None):
+            captured["customer_id"] = customer_id
+            return []
+
+    service = ReportService(_Repo())
+
+    assert service.export_bills(str(tmp_path / "export.xlsx"), customer_id=7)
+    assert captured["customer_id"] == 7
+
+
+def test_export_bills_csv_with_date_range_filters(tmp_path) -> None:
+    captured = {}
+
+    class _Repo:
+        def find_for_export(self, start_date=None, end_date=None, customer_id=None):
+            captured["start_date"] = start_date
+            captured["end_date"] = end_date
+            return []
+
+    service = ReportService(_Repo())
+    start_date = datetime(2024, 1, 1)
+    end_date = datetime(2024, 1, 2)
+
+    assert service.export_bills_csv(str(tmp_path / "export.csv"), start_date=start_date, end_date=end_date)
+    assert captured["start_date"] == start_date
+    assert captured["end_date"] == end_date
+
+
+def test_export_bills_csv_empty_list_creates_header(tmp_path) -> None:
+    class _Repo:
+        def find_for_export(self, start_date=None, end_date=None, customer_id=None):
+            return []
+
+    service = ReportService(_Repo())
+    output_path = tmp_path / "export.csv"
+
+    assert service.export_bills_csv(str(output_path)) is True
+    assert output_path.read_text(encoding="utf-8").splitlines()[0].startswith("Bill #")
+
+
+def test_export_bills_pdf_summary_truncates(monkeypatch) -> None:
+    captured = {}
+
+    class _Repo:
+        def find_for_export(self, start_date=None, end_date=None, customer_id=None):
+            return [
+                type(
+                    "Bill",
+                    (),
+                    {
+                        "id": index,
+                        "bill_number": f"B{index}",
+                        "bill_datetime": datetime(2024, 1, 1),
+                        "customer": type("Customer", (), {"name": "Alex"})(),
+                        "total": Decimal("1"),
+                        "payment_status": "Paid",
+                    },
+                )()
+                for index in range(55)
+            ]
+
+    class _Doc:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def build(self, story):
+            captured["story"] = story
+
+    monkeypatch.setattr("app.services.report_service.SimpleDocTemplate", _Doc)
+
+    service = ReportService(_Repo())
+
+    assert service.export_bills_pdf_summary("summary.pdf") is True
+
+    texts = [getattr(item, "text", "") for item in captured.get("story", [])]
+    assert any("Showing first 50" in text for text in texts)
+
+
+def test_export_bills_pdf_summary_all_dates_label(monkeypatch) -> None:
+    captured = {}
+
+    class _Repo:
+        def find_for_export(self, start_date=None, end_date=None, customer_id=None):
+            return []
+
+    class _Doc:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def build(self, story):
+            captured["story"] = story
+
+    monkeypatch.setattr("app.services.report_service.SimpleDocTemplate", _Doc)
+
+    service = ReportService(_Repo())
+
+    assert service.export_bills_pdf_summary("summary.pdf") is True
+
+    texts = [getattr(item, "text", "") for item in captured.get("story", [])]
+    assert any("All Dates" in text for text in texts)
+
+
+def test_export_bills_pdf_summary_handles_pending_and_missing_status(monkeypatch) -> None:
+    class _Repo:
+        def find_for_export(self, start_date=None, end_date=None, customer_id=None):
+            return [
+                type(
+                    "Bill",
+                    (),
+                    {
+                        "id": 1,
+                        "bill_number": "B1",
+                        "bill_datetime": datetime(2024, 1, 1),
+                        "customer": type("Customer", (), {"name": "Alex"})(),
+                        "total": Decimal("10"),
+                        "payment_status": "Pending",
+                    },
+                )(),
+                type(
+                    "Bill",
+                    (),
+                    {
+                        "id": 2,
+                        "bill_number": "B2",
+                        "bill_datetime": datetime(2024, 1, 1),
+                        "customer": type("Customer", (), {"name": "Alex"})(),
+                        "total": Decimal("5"),
+                        "payment_status": None,
+                    },
+                )(),
+            ]
+
+    class _Doc:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def build(self, story):
+            return None
+
+    monkeypatch.setattr("app.services.report_service.SimpleDocTemplate", _Doc)
+
+    service = ReportService(_Repo())
+
+    assert service.export_bills_pdf_summary("summary.pdf") is True

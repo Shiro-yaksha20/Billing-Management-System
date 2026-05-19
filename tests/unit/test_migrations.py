@@ -8,6 +8,7 @@ from sqlalchemy.exc import OperationalError
 from app.infrastructure import database as infra_db
 import app.migrate_service_schema as migrate_service_schema
 import app.migrate_bill_receipt_fields as migrate_bill_receipt_fields
+import app.migrate_bill_status_sync as migrate_bill_status_sync
 
 
 def test_migrate_service_table_runs(temp_db, monkeypatch) -> None:
@@ -20,6 +21,12 @@ def test_migrate_bill_receipt_fields_runs(temp_db, monkeypatch) -> None:
     monkeypatch.setattr(migrate_bill_receipt_fields, "engine", infra_db.engine)
 
     migrate_bill_receipt_fields.migrate()
+
+
+def test_migrate_bill_status_sync_runs(temp_db, monkeypatch) -> None:
+    monkeypatch.setattr(migrate_bill_status_sync, "engine", infra_db.engine)
+
+    migrate_bill_status_sync.migrate()
 
 
 def test_migrate_service_table_adds_columns(monkeypatch):

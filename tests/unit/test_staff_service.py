@@ -55,6 +55,12 @@ def test_create_staff_requires_name() -> None:
         service.create_staff("", None, None)
 
 
+def test_create_staff_whitespace_name_raises() -> None:
+    service = StaffService(_StubStaffRepo())
+    with pytest.raises(InsufficientDataError):
+        service.create_staff("   ", None, None)
+
+
 def test_update_staff_missing_raises() -> None:
     service = StaffService(_StubStaffRepo())
     with pytest.raises(StaffNotFoundError):
@@ -102,6 +108,14 @@ def test_list_active_staff_returns_list() -> None:
     assert staff_list[0].id == 1
 
 
+def test_list_active_staff_empty_returns_empty_list() -> None:
+    service = StaffService(_StubStaffRepo(active_staff=[]))
+
+    staff_list = service.list_active_staff()
+
+    assert staff_list == []
+
+
 def test_list_all_returns_list() -> None:
     staff_entity = Staff(id=1, name="Alex", phone="9", role="Stylist", active=True)
     service = StaffService(_StubStaffRepo(active_staff=[staff_entity]))
@@ -110,6 +124,17 @@ def test_list_all_returns_list() -> None:
 
     assert len(staff_list) == 1
     assert staff_list[0].id == 1
+
+
+def test_list_all_includes_inactive_staff() -> None:
+    active_staff = Staff(id=1, name="Alex", phone="9", role="Stylist", active=True)
+    inactive_staff = Staff(id=2, name="Lee", phone="8", role="Stylist", active=False)
+    service = StaffService(_StubStaffRepo(active_staff=[active_staff, inactive_staff]))
+
+    staff_list = service.list_all()
+
+    assert len(staff_list) == 2
+    assert {staff.id for staff in staff_list} == {1, 2}
 
 
 def test_update_staff_success_returns_data() -> None:
@@ -133,6 +158,15 @@ def test_update_staff_requires_name() -> None:
         service.update_staff(1, "", "1", "Role")
 
 
+def test_update_staff_whitespace_name_raises() -> None:
+    staff_entity = Staff(id=1, name="Old", phone="1", role="Old", active=True)
+    repo = _StubStaffRepo(staff=staff_entity)
+    service = StaffService(repo)
+
+    with pytest.raises(InsufficientDataError):
+        service.update_staff(1, "   ", "1", "Role")
+
+
 def test_toggle_active_success() -> None:
     staff_entity = Staff(id=1, name="Alex", phone="9", role="Stylist", active=True)
     repo = _StubStaffRepo(staff=staff_entity)
@@ -142,3 +176,14 @@ def test_toggle_active_success() -> None:
 
     assert result is True
     assert staff_entity.active is False
+
+
+def test_toggle_active_twice_restores_state() -> None:
+    staff_entity = Staff(id=1, name="Alex", phone="9", role="Stylist", active=True)
+    repo = _StubStaffRepo(staff=staff_entity)
+    service = StaffService(repo)
+
+    service.toggle_active(1)
+    service.toggle_active(1)
+
+    assert staff_entity.active is True

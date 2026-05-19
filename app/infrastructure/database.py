@@ -13,9 +13,14 @@ from ..models import Base
 
 engine = create_engine(
     DATABASE_URL,
+    # SQLite + StaticPool keeps one shared in-memory/file connection for app lifetime.
+    # With check_same_thread=False this supports cross-thread access, but session scoping
+    # remains mandatory to avoid thread contention.
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
 )
+# expire_on_commit=False intentionally keeps ORM objects usable after commit in UI flows.
+# Callers should reload entities when strict fresh state is required.
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
 
 
