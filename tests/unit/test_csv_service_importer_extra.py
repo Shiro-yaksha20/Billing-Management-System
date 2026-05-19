@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from app.csv_service_importer import export_services_to_csv, import_services_from_csv
 from app.infrastructure import database as infra_db
-from app.models import Service
 from app.repositories.service_repository import ServiceRepository
 
 

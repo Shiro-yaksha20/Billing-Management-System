@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from app.services.restore_service import RestoreService
 import app.services.restore_service as restore_service
 

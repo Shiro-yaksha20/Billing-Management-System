@@ -7,8 +7,6 @@ from pathlib import Path
 from types import ModuleType
 import sys
 
-import pytest
-
 from app.infrastructure.cloud_drive import CloudDriveAdapter
 
 
