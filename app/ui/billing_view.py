@@ -63,7 +63,10 @@ class BillingView(QWidget):
         self._service_catalog = service_catalog
         self._notification_service = notification_service
         self._settings_service = settings_service
-        self._currency_symbol = self._settings_service.get_setting("currency_symbol", "₹") or "₹"
+        self._currency_symbol = self._settings_service.get_setting(
+            "currency_symbol",
+            "\u20B9",
+        ) or "\u20B9"
 
         self.setWindowTitle("New Bill")
         self.setMinimumWidth(600)
@@ -513,10 +516,12 @@ class BillingView(QWidget):
 
     def _clear_form(self) -> None:
         self.selected_customer = None
+        self.customer_name_label.setText("")
+        self.customer_phone_label.setText("")
         self.customer_search_input.clear()
-        self.customer_name_label.setText("Name: ")
-        self.customer_phone_label.setText("Phone: ")
-        self.customer_notes_area.clear()
+        if hasattr(self, "customer_notes_area"):
+            self.customer_notes_area.clear()
+        self._customer_status_label.setText("Customer: Pending")
         self.services_table.setRowCount(0)
         self.discount_input.setText("0")
         self.transaction_id_input.clear()

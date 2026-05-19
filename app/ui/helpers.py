@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from ..services.notification_service import NotificationService
 
 
-def format_money(amount: Decimal, currency: str = "?") -> str:
+def format_money(amount: Decimal, currency: str = "\u20B9") -> str:
     """Format a monetary value with a currency symbol."""
     return f"{currency}{amount:,.2f}"
 

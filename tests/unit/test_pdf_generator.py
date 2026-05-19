@@ -90,6 +90,47 @@ def test_generate_receipt_pdf_preview_mode(settings_service, receipts_dir) -> No
     assert Path(pdf_path).exists()
 
 
+def test_generate_receipt_pdf_with_no_items(settings_service, receipts_dir) -> None:
+    receipt = _build_receipt()
+    receipt = ReceiptData(**{**receipt.__dict__, "items": []})
+
+    pdf_path = generate_receipt_pdf(receipt, settings_service)
+
+    assert Path(pdf_path).exists()
+
+
+def test_generate_receipt_pdf_with_discount(settings_service, receipts_dir) -> None:
+    receipt = _build_receipt()
+    receipt = ReceiptData(
+        **{
+            **receipt.__dict__,
+            "discount_amount": Decimal("5"),
+            "subtotal": Decimal("20"),
+            "total": Decimal("15"),
+        }
+    )
+
+    pdf_path = generate_receipt_pdf(receipt, settings_service)
+
+    assert Path(pdf_path).exists()
+
+
+def test_generate_receipt_pdf_with_tax(settings_service, receipts_dir) -> None:
+    receipt = _build_receipt()
+    receipt = ReceiptData(
+        **{
+            **receipt.__dict__,
+            "tax_percent": Decimal("5"),
+            "tax_amount": Decimal("1"),
+            "total": Decimal("11"),
+        }
+    )
+
+    pdf_path = generate_receipt_pdf(receipt, settings_service)
+
+    assert Path(pdf_path).exists()
+
+
 def test_generate_receipt_pdf_build_failure_cleans_temp(settings_service, receipts_dir, monkeypatch) -> None:
     receipt = _build_receipt()
 

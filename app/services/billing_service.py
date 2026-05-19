@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Iterable, List
 
@@ -91,7 +91,7 @@ class BillingService:
         bill = Bill(
             customer_id=customer_id,
             staff_id=staff_id,
-            bill_datetime=datetime.now(timezone.utc),
+            bill_datetime=datetime.now(),
             subtotal=subtotal,
             discount_amount=discount_amount,
             discount_type=options.discount_type,

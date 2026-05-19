@@ -51,9 +51,10 @@ class SettingsService:
 
     def set_setting(self, key: str, value: str | None) -> None:
         mapped_key = KEY_MIGRATION.get(key, key)
-        if key in KEY_MIGRATION and self._settings_repo.get_by_key(mapped_key):
-            self._settings_repo.set_value(key, value)
-            return
+        if mapped_key != key:
+            existing = self._settings_repo.get_by_key(mapped_key)
+            if existing and existing.value is not None:
+                return
         self._settings_repo.set_value(mapped_key, value)
 
     def get_secret(self, key: str) -> str | None:

@@ -46,7 +46,10 @@ class CustomerView(QWidget):
         self._billing_service = billing_service
         self._notification_service = notification_service
         self._settings_service = settings_service
-        self._currency_symbol = self._settings_service.get_setting("currency_symbol", "?") or "?"
+        self._currency_symbol = self._settings_service.get_setting(
+            "currency_symbol",
+            "\u20B9",
+        ) or "\u20B9"
         self.setWindowTitle("Manage Customers")
         self.setMinimumWidth(600)
 

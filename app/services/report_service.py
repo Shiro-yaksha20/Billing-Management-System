@@ -32,8 +32,8 @@ class ReportService:
 
     def _currency_symbol(self) -> str:
         if not self._settings_service:
-            return "?"
-        return self._settings_service.get_setting("currency_symbol", "?") or "?"
+            return "\u20B9"
+        return self._settings_service.get_setting("currency_symbol", "\u20B9") or "\u20B9"
 
     def export_bills(
         self,
@@ -249,8 +249,20 @@ class ReportService:
             )
             story.append(Spacer(1, 12))
 
+            max_bills = 50
+            truncated = total_bills > max_bills
+            bills = bills[:max_bills]
+            if truncated:
+                story.append(
+                    Paragraph(
+                        f"Note: Showing first {max_bills} of {total_bills} bills.",
+                        styles["Normal"],
+                    )
+                )
+                story.append(Spacer(1, 12))
+
             table_data = [["Bill #", "Date", "Customer", "Total", "Status"]]
-            for bill in bills[:20]:
+            for bill in bills:
                 table_data.append(
                     [
                         bill.bill_number or bill.id,
@@ -259,15 +271,6 @@ class ReportService:
                         f"{currency_symbol}{Decimal(bill.total or 0):,.2f}",
                         bill.payment_status or "",
                     ]
-                )
-
-            if total_bills > 20:
-                story.append(Spacer(1, 8))
-                story.append(
-                    Paragraph(
-                        f"Note: Showing first 20 of {total_bills} bills.",
-                        styles["Italic"],
-                    )
                 )
 
             table = Table(table_data)

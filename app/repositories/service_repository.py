@@ -26,6 +26,10 @@ class ServiceRepository(BaseRepository[Service]):
         with self._session_factory() as db:
             yield db
 
+    def session_context(self):
+        """Return a session context manager for batch operations."""
+        return self._session_factory()
+
     def list_active(self) -> Iterable[Service]:
         with self._session_factory() as db:
             return (

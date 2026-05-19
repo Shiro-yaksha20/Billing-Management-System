@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Callable, Iterable, Optional
 
@@ -162,11 +162,8 @@ class BillRepository(BaseRepository[Bill]):
 
     def get_daily_stats(self, target_date: date) -> dict:
         """Get aggregated daily dashboard statistics via SQL."""
-        local_tz = datetime.now().astimezone().tzinfo or timezone.utc
-        local_start = datetime.combine(target_date, time.min, tzinfo=local_tz)
-        local_end = datetime.combine(target_date, time.max, tzinfo=local_tz)
-        start = local_start.astimezone(timezone.utc)
-        end = local_end.astimezone(timezone.utc)
+        start = datetime.combine(target_date, datetime.min.time())
+        end = datetime.combine(target_date, datetime.max.time())
 
         with self._session_factory() as db:
             result = db.execute(

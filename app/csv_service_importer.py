@@ -51,7 +51,7 @@ def import_services_from_csv(
         return results
 
     try:
-        with service_repo.transaction_scope() as db:
+        with service_repo.session_context() as db:
             if clear_existing:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 backup_file = str(BACKUP_DIR / f"backup_services_{timestamp}.csv")

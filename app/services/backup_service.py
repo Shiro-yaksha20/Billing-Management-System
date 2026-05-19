@@ -72,6 +72,8 @@ class BackupService:
             parts = backup_file.stem.split("_")
             if len(parts) >= 4:
                 reason = "_".join(parts[3:]).replace(".db", "")
+            elif len(parts) >= 3:
+                reason = parts[2]
             backups.append(BackupInfo(path=str(backup_file), created_at=created_at, reason=reason))
         return backups
 

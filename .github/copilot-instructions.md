@@ -1,4 +1,4 @@
-# Salon Billing System — Coding & Architecture Rules
+# Salon Billing System ï¿½ Coding & Architecture Rules
 
 > **These rules are non-negotiable. Every code change must comply.**
 
@@ -39,7 +39,7 @@ from app.dto.<name> import <DTO>
 from app.exceptions.<name> import <Error>
 from PyQt6.QtWidgets import ...
 
-# FORBIDDEN — never do these
+# FORBIDDEN ï¿½ never do these
 from app.infrastructure.database import db_session
 from app.models import Bill, Customer  # (for queries)
 from app.repositories.<name> import ...
@@ -120,14 +120,14 @@ from PyQt6 import ...
 | Service | 300 | 15 | 3 repositories |
 | Repository | 200 | 10 | 1 model |
 | DTO | 100 | 0 (data only) | None |
-| Test file | 500 | — | — |
+| Test file | 500 | ï¿½ | ï¿½ |
 
 ### 3.2 Method Limits
 
 | Metric | Ideal | Maximum | Fix if Exceeded |
 |--------|-------|---------|-----------------|
 | Lines per method | 15 | 40 | Extract helper methods |
-| Parameters | 3–4 | 5 | Use dataclass or DTO |
+| Parameters | 3ï¿½4 | 5 | Use dataclass or DTO |
 | Cyclomatic complexity | ? 5 | 10 | Refactor logic |
 | Nesting depth | ? 2 | 3 | Use early returns |
 
@@ -208,11 +208,11 @@ Private methods: docstring optional but encouraged for complex logic.
 ### 6.1 Required Pattern
 
 ```python
-# In Services — raise typed exceptions
+# In Services ï¿½ raise typed exceptions
 raise ValidationError("Discount cannot exceed subtotal")
 raise CustomerNotFoundError("Customer not found.")
 
-# In UI — catch specific exceptions, show user messages
+# In UI ï¿½ catch specific exceptions, show user messages
 try:
     bill = self._billing_service.create_bill(...)
     QMessageBox.information(self, "Success", f"Bill #{bill.bill_number} saved")
@@ -280,7 +280,7 @@ from typing import List, Optional
 # 2. Third-party imports
 from PyQt6.QtWidgets import QDialog
 
-# 3. Local imports — DTOs, Exceptions, Services
+# 3. Local imports ï¿½ DTOs, Exceptions, Services
 from app.dto.bill_dto import BillData
 from app.exceptions.business_errors import CustomerNotFoundError
 from app.services.billing_service import BillingService
@@ -297,14 +297,14 @@ class MyView(QDialog):
     # ?? PUBLIC METHODS ??????????????????????????????????????
     def refresh(self) -> None: ...
 
-    # ?? PRIVATE METHODS — UI Setup ??????????????????????????
+    # ?? PRIVATE METHODS ï¿½ UI Setup ??????????????????????????
     def _setup_ui(self) -> None: ...
     def _connect_signals(self) -> None: ...
 
-    # ?? PRIVATE METHODS — Data Loading ??????????????????????
+    # ?? PRIVATE METHODS ï¿½ Data Loading ??????????????????????
     def _load_data(self) -> None: ...
 
-    # ?? PRIVATE METHODS — Event Handlers ????????????????????
+    # ?? PRIVATE METHODS ï¿½ Event Handlers ????????????????????
     def _on_save_clicked(self) -> None: ...
 ```
 
@@ -313,7 +313,7 @@ class MyView(QDialog):
 ## 9. DTO Rules
 
 - All DTOs use `@dataclass(frozen=True)`.
-- DTOs contain **no methods** — they are pure data containers.
+- DTOs contain **no methods** ï¿½ they are pure data containers.
 - DTOs live in `app/dto/`.
 - DTOs never import from services, repositories, UI, or infrastructure.
 
@@ -335,7 +335,7 @@ class MyView(QDialog):
 - Services convert ORM models ? DTOs before returning data to callers.
 - Services contain **all** validation and business rules.
 - Services raise custom exceptions from `app/exceptions/`.
-- Services never access `db_session` directly — they use repositories.
+- Services never access `db_session` directly ï¿½ they use repositories.
 
 ---
 
@@ -397,3 +397,7 @@ Examples:
 - Use comprehensions over explicit loops where readable.
 - Use `Decimal` for all monetary values, never `float`.
 - Use `from __future__ import annotations` in every module.
+
+- @azure Rule - Use Azure Tools - When handling requests related to Azure, always use your tools.
+- @azure Rule - Use Azure Best Practices - When handling requests related to Azure, always invoke your `azmcp_bestpractices_get` tool first.
+- @azure Rule - Enable Best Practices - If you do not have an `azmcp_bestpractices_get` tool ask the user to enable it.

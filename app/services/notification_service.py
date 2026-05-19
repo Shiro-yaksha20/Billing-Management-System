@@ -31,7 +31,9 @@ class NotificationService:
         total: str,
         attachment_path: Optional[str] = None,
     ) -> NotificationResult:
-        currency_symbol = self._settings_service.get_setting("currency_symbol", "₹") or "₹"
+        currency_symbol = (
+            self._settings_service.get_setting("currency_symbol", "\u20B9") or "\u20B9"
+        )
         template = self._settings_service.get_setting(
             "whatsapp_message_template",
             "Hi {customer_name}, thank you for visiting {business_name}. Your bill total is {currency_symbol}{total}.",
@@ -43,15 +45,16 @@ class NotificationService:
             total=total,
         )
         country_code = self._settings_service.get_setting("whatsapp_country_code", "91")
-        normalized_phone = (phone_number or "").strip()
         normalized_country = (country_code or "").strip().lstrip("+")
+        clean_phone = (phone_number or "").strip().lstrip("+")
+        clean_phone = clean_phone.replace(" ", "").replace("-", "")
 
-        if normalized_phone.startswith("+"):
-            full_phone = normalized_phone.lstrip("+")
-        elif normalized_country and normalized_phone.startswith(normalized_country):
-            full_phone = normalized_phone
+        if normalized_country and clean_phone.startswith(normalized_country):
+            full_phone = clean_phone
+        elif normalized_country:
+            full_phone = f"{normalized_country}{clean_phone}"
         else:
-            full_phone = f"{normalized_country}{normalized_phone}"
+            full_phone = clean_phone
 
         success, response = send_whatsapp_message(
             full_phone, message, self._settings_service, attachment_path

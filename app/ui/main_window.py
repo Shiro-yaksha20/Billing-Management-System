@@ -66,7 +66,10 @@ class MainWindow(QMainWindow):
         self._notification_service = notification_service
         self._backup_service = backup_service
         self._restore_service = restore_service
-        self._currency_symbol = self._settings_service.get_setting("currency_symbol", "₹") or "₹"
+        self._currency_symbol = self._settings_service.get_setting(
+            "currency_symbol",
+            "\u20B9",
+        ) or "\u20B9"
 
         business_name = self._settings_service.get_setting("business_name", "Billing System")
         self.setWindowTitle(f"{business_name} - Billing")
