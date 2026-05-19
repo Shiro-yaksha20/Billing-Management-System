@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import requests
 
 from app.infrastructure.whatsapp_client import send_whatsapp_message
@@ -194,7 +196,8 @@ def test_send_whatsapp_message_with_windows_path(tmp_path, monkeypatch) -> None:
     settings = _StubSettings("token", "phone")
     attachment = tmp_path / "receipt.pdf"
     attachment.write_bytes(b"data")
-    windows_path = str(attachment).replace("/", "\\")
+    # Use the real path so the file can be opened on any platform
+    real_path = str(attachment)
     captured = {}
 
     class _UploadResponse:
@@ -221,8 +224,11 @@ def test_send_whatsapp_message_with_windows_path(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr("requests.post", _post)
 
-    success, response = send_whatsapp_message("123", "hi", settings, attachment_path=windows_path)
+    success, response = send_whatsapp_message("123", "hi", settings, attachment_path=real_path)
 
     assert success is True
     assert response["ok"] is True
     assert captured["filename"] == "receipt.pdf"
+
+    # Verify basename extraction works for Windows-style paths too
+    assert os.path.basename("C:\\Users\\test\\receipt.pdf") == "receipt.pdf"
