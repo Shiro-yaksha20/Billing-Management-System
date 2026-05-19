@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 import requests
 
 from app.infrastructure.whatsapp_client import send_whatsapp_message
@@ -231,4 +229,6 @@ def test_send_whatsapp_message_with_windows_path(tmp_path, monkeypatch) -> None:
     assert captured["filename"] == "receipt.pdf"
 
     # Verify basename extraction works for Windows-style paths too
-    assert os.path.basename("C:\\Users\\test\\receipt.pdf") == "receipt.pdf"
+    # ntpath handles backslashes on any platform (os.path doesn't on Linux)
+    import ntpath
+    assert ntpath.basename("C:\\Users\\test\\receipt.pdf") == "receipt.pdf"
